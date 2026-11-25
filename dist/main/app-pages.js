@@ -117,7 +117,7 @@ function handle(request, incognito) {
             if (e.favicon && URL.canParse(e.url))
                 known.set(new URL(e.url).host, e.favicon);
         const withIcon = (e) => ({ ...e, favicon: e.favicon || (URL.canParse(e.url) ? known.get(new URL(e.url).host) : undefined) });
-        return Response.json({ incognito, theme: store_1.store.appearance().theme, pinned: store_1.store.pinned().map(withIcon), recent: incognito ? [] : (0, history_1.allHistory)().slice(0, 6).map(withIcon) });
+        return Response.json({ incognito, theme: store_1.store.appearance().theme, wallpaper: store_1.store.appearance().wallpaper, pinned: store_1.store.pinned().map(withIcon), recent: incognito ? [] : (0, history_1.allHistory)().slice(0, 6).map(withIcon) });
     }
     return serveFile(url.hostname, url.pathname);
 }

@@ -20,6 +20,44 @@
 :root[data-theme="emerald"] { --g1: light-dark(#d4eee0, #103c2f); --g2: light-dark(#d5eaec, #0a272b); --g3: light-dark(#e4f1de, #1d4331); --accent: light-dark(#12684a, #8bd8b4); }
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
+
+/* ---- Wallpaper: a new photo each day, behind the usual gradient. ---- */
+#wallpaper {
+  position: fixed;
+  inset: 0;
+  z-index: -2;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0;
+  transition: opacity 0.8s ease;
+}
+body.has-wallpaper #wallpaper { opacity: 1; }
+/* A top-to-bottom scrim keeps the clock and search box readable over a bright photo. */
+body.has-wallpaper::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background: linear-gradient(
+    180deg,
+    light-dark(rgba(255, 255, 255, 0.4), rgba(10, 10, 14, 0.55)) 0%,
+    light-dark(rgba(255, 255, 255, 0.12), rgba(10, 10, 14, 0.25)) 32%,
+    light-dark(rgba(242, 242, 246, 0.55), rgba(10, 10, 14, 0.62)) 100%
+  );
+  pointer-events: none;
+}
+/* Panels turn into frosted glass over the photo, the same idea as the toolbar's. */
+body.has-wallpaper .panel,
+body.has-wallpaper .tile > a,
+body.has-wallpaper #search {
+  background: light-dark(rgba(255, 255, 255, 0.55), rgba(30, 30, 34, 0.45));
+  backdrop-filter: blur(24px) saturate(160%);
+}
+body.has-wallpaper header {
+  text-shadow: 0 1px 16px light-dark(rgba(255, 255, 255, 0.5), rgba(0, 0, 0, 0.45));
+}
+
 body {
   margin: 0;
   padding: clamp(24px, 7vh, 72px) clamp(16px, 4vw, 40px) 40px;

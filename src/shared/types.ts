@@ -39,6 +39,8 @@ export interface BrowserState {
 export interface Appearance {
   mode: 'system' | 'light' | 'dark';
   theme: 'default' | 'midnight' | 'titanium' | 'aurora' | 'rose' | 'champagne' | 'emerald';
+  // A new photo every day, borrowed from Unsplash via Lorem Picsum; 'none' keeps the plain theme background.
+  wallpaper: 'none' | 'daily';
 }
 
 export type PermissionValue = 'ask' | 'allow' | 'block';

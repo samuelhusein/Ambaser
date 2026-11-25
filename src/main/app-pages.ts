@@ -73,7 +73,7 @@ function handle(request: Request, incognito: boolean): Response {
     const known = new Map<string, string>();
     for (const e of [...store.pinned(), ...(incognito ? [] : allHistory())]) if (e.favicon && URL.canParse(e.url)) known.set(new URL(e.url).host, e.favicon);
     const withIcon = <T extends { url: string; favicon?: string | null }>(e: T): T => ({ ...e, favicon: e.favicon || (URL.canParse(e.url) ? known.get(new URL(e.url).host) : undefined) });
-    return Response.json({ incognito, theme: store.appearance().theme, pinned: store.pinned().map(withIcon), recent: incognito ? [] : allHistory().slice(0, 6).map(withIcon) });
+    return Response.json({ incognito, theme: store.appearance().theme, wallpaper: store.appearance().wallpaper, pinned: store.pinned().map(withIcon), recent: incognito ? [] : allHistory().slice(0, 6).map(withIcon) });
   }
   return serveFile(url.hostname, url.pathname);
 }

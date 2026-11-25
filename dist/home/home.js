@@ -94,6 +94,25 @@ byId('search').addEventListener('submit', (event) => {
   if (text) location.href = `mybrowser://home/open?q=${encodeURIComponent(text)}`;
 });
 
+// A new photo from Unsplash (served by Lorem Picsum, no account needed) once a day; the date is the
+// seed, so everyone who opens this page on the same day sees the same photo, and tomorrow a new one.
+function applyWallpaper(wallpaper) {
+  if (wallpaper !== 'daily') return document.body.classList.remove('has-wallpaper');
+  const seed = new Date().toLocaleDateString('en-CA'); // YYYY-MM-DD in local time
+  const width = Math.min(2400, Math.round((screen.width || 1600) * (window.devicePixelRatio || 1)));
+  const height = Math.min(1500, Math.round((screen.height || 1000) * (window.devicePixelRatio || 1)));
+  const url = `https://picsum.photos/seed/${seed}/${width}/${height}`;
+  // Swap the image in only once it has actually loaded, so a blocked or offline network just
+  // leaves today's gradient background instead of a broken image or a flash of grey.
+  const probe = new Image();
+  probe.onload = () => {
+    byId('wallpaper').src = url;
+    document.body.classList.add('has-wallpaper');
+  };
+  probe.onerror = () => document.body.classList.remove('has-wallpaper');
+  probe.src = url;
+}
+
 fetch('mybrowser://home/api/data')
   .then((res) => res.json())
   .then((data) => {
@@ -102,4 +121,5 @@ fetch('mybrowser://home/api/data')
     byId('activity').hidden = data.incognito;
     render(data.pinned, 'pinned', tile);
     render(data.recent, 'recent', row);
+    applyWallpaper(data.wallpaper);
   });

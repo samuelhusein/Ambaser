@@ -416,12 +416,13 @@ function favoriteButton(site: BrowserState['favorites'][number]): HTMLButtonElem
   return button;
 }
 
-let appearance: import('../shared/types').Appearance = { mode: 'dark', theme: 'default' };
+let appearance: import('../shared/types').Appearance = { mode: 'dark', theme: 'default', wallpaper: 'daily' };
 
 function drawAppearance(): void {
   document.documentElement.dataset.theme = appearance.theme;
   for (const b of document.querySelectorAll<HTMLButtonElement>('[data-mode]')) b.setAttribute('aria-pressed', String(b.dataset.mode === appearance.mode));
   for (const b of document.querySelectorAll<HTMLButtonElement>('[data-theme-choice]')) b.setAttribute('aria-pressed', String(b.dataset.themeChoice === appearance.theme));
+  for (const b of document.querySelectorAll<HTMLButtonElement>('[data-wallpaper]')) b.setAttribute('aria-pressed', String(b.dataset.wallpaper === appearance.wallpaper));
 }
 
 // Appearance applies as soon as it is picked; no Save needed.
@@ -430,6 +431,9 @@ for (const b of document.querySelectorAll<HTMLButtonElement>('[data-mode]')) {
 }
 for (const b of document.querySelectorAll<HTMLButtonElement>('[data-theme-choice]')) {
   b.addEventListener('click', () => api.setAppearance({ ...appearance, theme: b.dataset.themeChoice as typeof appearance.theme }));
+}
+for (const b of document.querySelectorAll<HTMLButtonElement>('[data-wallpaper]')) {
+  b.addEventListener('click', () => api.setAppearance({ ...appearance, wallpaper: b.dataset.wallpaper as typeof appearance.wallpaper }));
 }
 
 let lastState: BrowserState | null = null;

@@ -384,13 +384,15 @@ function favoriteButton(site) {
     });
     return button;
 }
-let appearance = { mode: 'dark', theme: 'default' };
+let appearance = { mode: 'dark', theme: 'default', wallpaper: 'daily' };
 function drawAppearance() {
     document.documentElement.dataset.theme = appearance.theme;
     for (const b of document.querySelectorAll('[data-mode]'))
         b.setAttribute('aria-pressed', String(b.dataset.mode === appearance.mode));
     for (const b of document.querySelectorAll('[data-theme-choice]'))
         b.setAttribute('aria-pressed', String(b.dataset.themeChoice === appearance.theme));
+    for (const b of document.querySelectorAll('[data-wallpaper]'))
+        b.setAttribute('aria-pressed', String(b.dataset.wallpaper === appearance.wallpaper));
 }
 // Appearance applies as soon as it is picked; no Save needed.
 for (const b of document.querySelectorAll('[data-mode]')) {
@@ -398,6 +400,9 @@ for (const b of document.querySelectorAll('[data-mode]')) {
 }
 for (const b of document.querySelectorAll('[data-theme-choice]')) {
     b.addEventListener('click', () => api.setAppearance({ ...appearance, theme: b.dataset.themeChoice }));
+}
+for (const b of document.querySelectorAll('[data-wallpaper]')) {
+    b.addEventListener('click', () => api.setAppearance({ ...appearance, wallpaper: b.dataset.wallpaper }));
 }
 let lastState = null;
 let hiddenIds = [];

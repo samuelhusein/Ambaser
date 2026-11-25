@@ -5,6 +5,8 @@ const { isHarmless, question, kindsOf, secureOrigin } = require('../dist/shared/
 test('only known permissions are harmless or asked about', () => {
   assert.equal(isHarmless('fullscreen'), true);
   assert.equal(isHarmless('geolocation'), false);
+  assert.equal(isHarmless('persistent-storage'), true);
+  assert.equal(isHarmless('background-sync'), true);
   assert.ok(question('notifications'));
   assert.equal(question('usb'), undefined);
   assert.equal(question('constructor'), undefined);
