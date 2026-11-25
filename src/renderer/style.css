@@ -156,6 +156,8 @@ button, input { font: inherit; color: var(--fg); }
 .row { display: flex; align-items: center; gap: 12px; height: var(--control); padding: 0 6px 0 var(--edge); border-radius: 4px; cursor: pointer; }
 .row:hover, .row.selected { background: var(--hover); }
 .row > svg { color: var(--fg-dim); }
+/* Site icons come in any size; in a list they are all 16px. */
+.row > img { flex: none; width: 16px; height: 16px; border-radius: 4px; object-fit: contain; }
 .row-text { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .row-url { margin-left: var(--edge); color: var(--fg-dim); }
 
