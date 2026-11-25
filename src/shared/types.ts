@@ -27,6 +27,7 @@ export interface BrowserState {
   tabs: TabState[];
   groups: GroupState[];
   appearance: Appearance;
+  updateVersion: string | null; // a newer release exists on GitHub
   activeId: number | null;
   canGoBack: boolean;
   canGoForward: boolean;

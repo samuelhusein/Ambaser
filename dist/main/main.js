@@ -46,6 +46,7 @@ const appearance_1 = require("../shared/appearance");
 const permissions_2 = require("../shared/permissions");
 const suggest_1 = require("../shared/suggest");
 const groups_1 = require("../shared/groups");
+const version_1 = require("../shared/version");
 const child_process_1 = require("child_process");
 const util_1 = require("util");
 const downloads_1 = require("./downloads");
@@ -75,6 +76,21 @@ const webPreferences = {
     allowRunningInsecureContent: false,
 };
 const windows = [];
+const VERSION_URL = 'https://raw.githubusercontent.com/samuelhusein/Ambaser/main/package.json';
+let latestVersion = null;
+// Asks GitHub which version main is on. Offline or any failure just means no alert.
+async function checkVersion() {
+    try {
+        const res = await electron_1.net.fetch(VERSION_URL, { signal: AbortSignal.timeout(10000) });
+        const version = res.ok ? (await res.json()).version : null;
+        if (typeof version !== 'string' || !/^\d+\.\d+\.\d+$/.test(version) || version === latestVersion)
+            return;
+        latestVersion = version;
+        for (const w of windows)
+            broadcast(w);
+    }
+    catch { }
+}
 let nextId = 1;
 let nextGroupId = 1;
 let incognitoCount = 0;
@@ -128,6 +144,7 @@ function snapshot({ tabs, groups, activeTab }) {
         barLimit: store_1.BAR_LIMIT,
         groups,
         appearance: store_1.store.appearance(),
+        updateVersion: latestVersion && (0, version_1.isNewer)(latestVersion, electron_1.app.getVersion()) ? latestVersion : null,
         activeId: activeTab ? activeTab.id : null,
         canGoBack: activeTab ? activeTab.view.webContents.navigationHistory.canGoBack() : false,
         canGoForward: activeTab ? activeTab.view.webContents.navigationHistory.canGoForward() : false,
@@ -980,6 +997,8 @@ electron_1.app.whenReady().then(async () => {
     electron_1.app.dock?.setIcon(ICON);
     (0, history_1.loadHistory)();
     (0, store_1.loadStore)();
+    void checkVersion();
+    setInterval(() => void checkVersion(), 6 * 60 * 60 * 1000);
     applyAppearance();
     electron_1.nativeTheme.on('updated', () => {
         if (IS_MAC)

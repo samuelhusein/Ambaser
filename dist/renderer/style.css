@@ -278,6 +278,7 @@ body.mac .history-panel { background: linear-gradient(light-dark(rgba(246, 246, 
 #pin.pinned svg { fill: currentColor; }
 .badge { flex: none; margin-left: auto; padding: 2px 10px; border: 1px solid var(--line); border-radius: 12px; background: #4a3f7a; color: #eee9ff; font-size: 11px; }
 .badge[hidden] { display: none; }
+.update-badge { margin: 0 4px; border-color: var(--accent); background: transparent; color: var(--accent); cursor: pointer; }
 body.incognito .chrome, body.mac.incognito .chrome { background: linear-gradient(112deg, #2b1f4d, #17122b 52%, #261a45); }
 
 .settings-layout { display: flex; width: 100%; max-width: 960px; min-height: 100%; margin: 0 auto; }

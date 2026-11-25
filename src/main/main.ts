@@ -11,6 +11,7 @@ import { parseAppearance } from '../shared/appearance';
 import { secureOrigin } from '../shared/permissions';
 import { parseSuggestions, searchHistory, suggestQuery } from '../shared/suggest';
 import { GROUP_COLORS, moveToGroup, patchGroup, placeTab, reviveGroups } from '../shared/groups';
+import { isNewer } from '../shared/version';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import { downloadAction, downloadList, onDownloadsChange } from './downloads';
@@ -76,6 +77,19 @@ interface Win {
 }
 
 const windows: Win[] = [];
+const VERSION_URL = 'https://raw.githubusercontent.com/samuelhusein/Ambaser/main/package.json';
+let latestVersion: string | null = null;
+
+// Asks GitHub which version main is on. Offline or any failure just means no alert.
+async function checkVersion(): Promise<void> {
+  try {
+    const res = await net.fetch(VERSION_URL, { signal: AbortSignal.timeout(10000) });
+    const version = res.ok ? ((await res.json()) as { version?: unknown }).version : null;
+    if (typeof version !== 'string' || !/^\d+\.\d+\.\d+$/.test(version) || version === latestVersion) return;
+    latestVersion = version;
+    for (const w of windows) broadcast(w);
+  } catch {}
+}
 let nextId = 1;
 let nextGroupId = 1;
 let incognitoCount = 0;
@@ -132,6 +146,7 @@ function snapshot({ tabs, groups, activeTab }: Win): BrowserState {
     barLimit: BAR_LIMIT,
     groups,
     appearance: store.appearance(),
+    updateVersion: latestVersion && isNewer(latestVersion, app.getVersion()) ? latestVersion : null,
     activeId: activeTab ? activeTab.id : null,
     canGoBack: activeTab ? activeTab.view.webContents.navigationHistory.canGoBack() : false,
     canGoForward: activeTab ? activeTab.view.webContents.navigationHistory.canGoForward() : false,
@@ -921,6 +936,8 @@ app.whenReady().then(async () => {
   app.dock?.setIcon(ICON);
   loadHistory();
   loadStore();
+  void checkVersion();
+  setInterval(() => void checkVersion(), 6 * 60 * 60 * 1000);
   applyAppearance();
   nativeTheme.on('updated', () => {
     if (IS_MAC) for (const w of windows) w.win.setVibrancy(glass());

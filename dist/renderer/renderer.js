@@ -44,6 +44,7 @@ const el = {
     findNext: document.getElementById('find-next'),
     findClose: document.getElementById('find-close'),
     settings: document.getElementById('settings-panel'),
+    updateBadge: document.getElementById('update-badge'),
     settingsButton: document.getElementById('settings-btn'),
     settingsForm: document.getElementById('settings-form'),
     settingsClose: document.getElementById('settings-close'),
@@ -486,6 +487,9 @@ function render(state) {
     appearance = state.appearance;
     drawAppearance();
     lastState = state;
+    el.updateBadge.hidden = !state.updateVersion;
+    el.updateBadge.textContent = `Update v${state.updateVersion}`;
+    el.updateBadge.title = 'A newer version is available. Click to update.';
     favorites = state.favorites;
     drawFavoritesSettings();
     barLimit = state.barLimit;
@@ -1002,6 +1006,10 @@ async function openSettings() {
 }
 el.settingsButton.addEventListener('click', () => (el.settings.hidden ? void openSettings() : closePanel()));
 el.settingsClose.addEventListener('click', closePanel);
+el.updateBadge.addEventListener('click', async () => {
+    await openSettings();
+    showSection('about');
+});
 el.settingsForm.addEventListener('change', () => {
     enableFields();
     showStatus('');
