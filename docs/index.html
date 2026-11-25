@@ -33,7 +33,7 @@
     </ol>
   </main>
   <script>
-    fetch("https://raw.githubusercontent.com/samuelhusein/Ambaser/main/package.json")
+    fetch("https://raw.githubusercontent.com/samuelhusein/Ambaser/main/package.json?t="+Date.now(), { cache: "no-store" })
       .then((r) => r.json())
       .then((p) => (document.getElementById("version").textContent = "v" + p.version))
       .catch(() => {});
