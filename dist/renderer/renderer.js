@@ -60,6 +60,11 @@ const el = {
     historyClose: document.getElementById('history-close'),
     historyFilter: document.getElementById('history-filter'),
     historyList: document.getElementById('history-list'),
+    historyRange: document.getElementById('history-range'),
+    historyFrom: document.getElementById('history-from'),
+    historyTo: document.getElementById('history-to'),
+    historyFromLabel: document.getElementById('history-from-label'),
+    historyToLabel: document.getElementById('history-to-label'),
 };
 // 24x24 line icons, drawn with the current text colour (see the svg rule in style.css).
 const ICONS = {
@@ -773,7 +778,8 @@ function historyRow(entry) {
         closePanel();
         api.navigate(entry.url);
     });
-    const time = entry.time ? new Date(entry.time).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false }) : '';
+    // The date is in the group heading above, so a row only needs the time.
+    const time = entry.time ? new Date(entry.time).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : '';
     const text = span('row-text', entry.title);
     text.append(span('row-url', entry.url));
     const remove = removeButton('Remove from history', async () => {
@@ -789,6 +795,69 @@ function setConfirming(value) {
     el.historyClear.textContent = value ? 'Click again to delete all' : 'Clear all';
     el.historyClear.classList.toggle('danger', value);
 }
+// A day as "YYYY-MM-DD" in local time, the same form a date input uses, so days compare as text.
+function dayKey(date) {
+    const two = (n) => String(n).padStart(2, '0');
+    return `${date.getFullYear()}-${two(date.getMonth() + 1)}-${two(date.getDate())}`;
+}
+function daysAgo(count) {
+    const date = new Date();
+    date.setDate(date.getDate() - count);
+    return dayKey(date);
+}
+// The first and last day to show; an empty string leaves that side open.
+function dateBounds() {
+    const from = el.historyFrom.value;
+    const to = el.historyTo.value;
+    switch (el.historyRange.value) {
+        case 'today': return [daysAgo(0), daysAgo(0)];
+        case 'yesterday': return [daysAgo(1), daysAgo(1)];
+        case 'week': return [daysAgo(6), daysAgo(0)];
+        case 'month': return [daysAgo(29), daysAgo(0)];
+        case 'day': return [from, from];
+        case 'range': return from && to && from > to ? [to, from] : [from, to]; // picked backwards still works
+        default: return ['', ''];
+    }
+}
+function inBounds(entry, [from, to]) {
+    if (!from && !to)
+        return true;
+    if (!entry.time)
+        return false; // saved by an older version, date unknown
+    const day = dayKey(new Date(entry.time));
+    return (!from || day >= from) && (!to || day <= to);
+}
+function dayTitle(key) {
+    if (!key)
+        return 'Date unknown';
+    const full = new Date(`${key}T00:00`).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+    if (key === daysAgo(0))
+        return `Today, ${full}`;
+    return key === daysAgo(1) ? `Yesterday, ${full}` : full;
+}
+// Entries arrive newest first, so each day's rows are already next to each other.
+function groupedByDay(entries) {
+    const groups = new Map();
+    for (const entry of entries) {
+        const key = entry.time ? dayKey(new Date(entry.time)) : '';
+        groups.set(key, [...(groups.get(key) ?? []), entry]);
+    }
+    return [...groups].map(([key, list]) => {
+        const section = document.createElement('section');
+        section.className = 'history-day';
+        const heading = document.createElement('h2');
+        heading.append(span('', dayTitle(key)), span('history-count', `${list.length} ${list.length === 1 ? 'page' : 'pages'}`));
+        section.append(heading, ...list.map(historyRow));
+        return section;
+    });
+}
+function showDateFields() {
+    const mode = el.historyRange.value;
+    el.historyFromLabel.hidden = mode !== 'day' && mode !== 'range';
+    el.historyToLabel.hidden = mode !== 'range';
+    el.historyFromLabel.firstElementChild.textContent = mode === 'day' ? 'Date' : 'From';
+    el.historyFrom.max = el.historyTo.max = daysAgo(0);
+}
 async function drawHistory() {
     const current = ++panelRequest;
     const query = el.historyFilter.value;
@@ -796,8 +865,10 @@ async function drawHistory() {
     if (current !== panelRequest)
         return;
     el.historyClear.disabled = all.length === 0;
-    if (shown.length)
-        el.historyList.replaceChildren(...shown.map(historyRow));
+    const bounds = dateBounds();
+    const dated = shown.filter((entry) => inBounds(entry, bounds));
+    if (dated.length)
+        el.historyList.replaceChildren(...groupedByDay(dated));
     else
         el.historyList.replaceChildren(span('history-empty', all.length ? 'No matches' : 'No history yet'));
 }
@@ -809,6 +880,9 @@ function openPanel() {
     el.address.blur();
     el.panel.hidden = false;
     el.historyFilter.value = '';
+    el.historyRange.value = 'all';
+    el.historyFrom.value = el.historyTo.value = '';
+    showDateFields();
     setConfirming(false);
     resizeChrome();
     el.historyFilter.focus();
@@ -827,6 +901,17 @@ function closePanel() {
 el.historyButton.addEventListener('click', () => (el.panel.hidden ? openPanel() : closePanel()));
 el.historyClose.addEventListener('click', closePanel);
 el.historyFilter.addEventListener('input', () => void drawHistory());
+el.historyRange.addEventListener('change', () => {
+    showDateFields();
+    // Start from today instead of an empty box.
+    if (!el.historyFrom.value && (el.historyRange.value === 'day' || el.historyRange.value === 'range'))
+        el.historyFrom.value = daysAgo(el.historyRange.value === 'range' ? 6 : 0);
+    if (!el.historyTo.value && el.historyRange.value === 'range')
+        el.historyTo.value = daysAgo(0);
+    void drawHistory();
+});
+for (const input of [el.historyFrom, el.historyTo])
+    input.addEventListener('input', () => void drawHistory());
 el.historyClear.addEventListener('click', async () => {
     if (!confirmingClear)
         return setConfirming(true);
