@@ -7,7 +7,8 @@ const MAX_ENTRIES = 1000;
 // Newest first, one entry per URL. Only web pages are remembered.
 export function addVisit(list: HistoryEntry[], url: string, title: string, time = Date.now()): HistoryEntry[] {
   if (!/^https?:\/\//i.test(url)) return list;
-  return [{ url, title, time }, ...list.filter((e) => e.url !== url)].slice(0, MAX_ENTRIES);
+  const favicon = list.find((e) => e.url === url)?.favicon; // a revisit keeps its icon
+  return [{ url, title, time, ...(favicon ? { favicon } : {}) }, ...list.filter((e) => e.url !== url)].slice(0, MAX_ENTRIES);
 }
 
 // Every typed word must appear in the title or URL. An empty query returns the latest visits.

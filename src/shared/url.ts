@@ -57,3 +57,8 @@ export function normalizeInput(input: string): string | null {
 
   return isAllowedUrl(candidate) ? new URL(candidate).toString() : null;
 }
+
+// Chat and mail sites announce unread messages at the start of their title, e.g. "(2) WhatsApp".
+const UNREAD = /^\((\d{1,4})\+?\)\s*/;
+export const unreadCount = (title: string): number => Number(UNREAD.exec(title)?.[1] ?? 0);
+export const withoutUnread = (title: string): string => title.replace(UNREAD, '');

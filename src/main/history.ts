@@ -40,6 +40,14 @@ export function retitle(url: string, title: string): void {
   save();
 }
 
+// Icons arrive after the navigation too. Huge inline ones are skipped to keep the file small.
+export function setFavicon(url: string, favicon: string): void {
+  const entry = entries.find((e) => e.url === url);
+  if (!entry || entry.favicon === favicon || favicon.length > 8192) return;
+  entry.favicon = favicon;
+  save();
+}
+
 export function removeVisit(url: string): void {
   entries = entries.filter((e) => e.url !== url);
   save();

@@ -1,7 +1,7 @@
 "use strict";
 // Pure URL helpers used by the main process. Kept free of Electron imports so they can be unit tested.
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.SEARCH_URL = exports.isAppUrl = exports.LOAD_ERROR_HOST = exports.CERT_ERROR_HOST = exports.HOME_URL = exports.BLANK_URL = void 0;
+exports.withoutUnread = exports.unreadCount = exports.SEARCH_URL = exports.isAppUrl = exports.LOAD_ERROR_HOST = exports.CERT_ERROR_HOST = exports.HOME_URL = exports.BLANK_URL = void 0;
 exports.certErrorUrl = certErrorUrl;
 exports.loadErrorUrl = loadErrorUrl;
 exports.displayUrl = displayUrl;
@@ -62,3 +62,9 @@ function normalizeInput(input) {
         candidate = exports.SEARCH_URL + encodeURIComponent(text);
     return isAllowedUrl(candidate) ? new URL(candidate).toString() : null;
 }
+// Chat and mail sites announce unread messages at the start of their title, e.g. "(2) WhatsApp".
+const UNREAD = /^\((\d{1,4})\+?\)\s*/;
+const unreadCount = (title) => Number(UNREAD.exec(title)?.[1] ?? 0);
+exports.unreadCount = unreadCount;
+const withoutUnread = (title) => title.replace(UNREAD, '');
+exports.withoutUnread = withoutUnread;

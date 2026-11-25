@@ -35,3 +35,15 @@ export function placeTab<T extends { groupId: number | null }>(tabs: T[], tab: T
   tab.groupId = target ? target.groupId : null;
   tabs.splice(target ? tabs.indexOf(target) + (after ? 1 : 0) : tabs.length, 0, tab);
 }
+
+// Rebuilds saved (untrusted) groups for the restored tabs, under fresh ids. Keyed by the saved id.
+export function reviveGroups(saved: unknown, used: (number | null | undefined)[], newId: () => number): Map<number, GroupState> {
+  const groups = new Map<number, GroupState>();
+  for (const item of Array.isArray(saved) ? saved : []) {
+    if (!used.includes(item?.id) || groups.has(item.id)) continue;
+    const group: GroupState = { id: newId(), name: '', color: 'grey', icon: 'none', collapsed: false };
+    patchGroup(group, item);
+    groups.set(item.id, group);
+  }
+  return groups;
+}

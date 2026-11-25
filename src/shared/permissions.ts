@@ -10,6 +10,8 @@ const QUESTIONS: Record<string, string> = {
   'clipboard-read': 'read your clipboard',
 };
 
+export const KINDS = Object.keys(QUESTIONS);
+
 export const isHarmless = (permission: string): boolean => HARMLESS.has(permission);
 
 export const question = (kind: string): string | undefined => (Object.hasOwn(QUESTIONS, kind) ? QUESTIONS[kind] : undefined);

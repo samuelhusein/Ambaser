@@ -1,18 +1,20 @@
-import { app, BrowserWindow, ipcMain, Menu, net, session, shell, WebContentsView, IpcMainEvent, IpcMainInvokeEvent, WebContents } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, net, session, shell, WebContentsView, IpcMainEvent, IpcMainInvokeEvent, WebContents } from 'electron';
 import * as path from 'path';
-import { BLANK_URL, HOME_URL, certErrorUrl, displayUrl, isAllowedUrl, isAppUrl, loadErrorUrl, normalizeInput } from '../shared/url';
-import { isTrusted, registerPages, registerScheme, runPageAction } from './app-pages';
+import { BLANK_URL, HOME_URL, certErrorUrl, displayUrl, isAllowedUrl, isAppUrl, loadErrorUrl, normalizeInput, unreadCount, withoutUnread } from '../shared/url';
+import { forgetCertificate, forgetCertificates, hasAcceptedCertificate, isTrusted, registerPages, registerScheme, runPageAction } from './app-pages';
 import { applyDns, applyProxy } from './network';
-import { loadStore, store } from './store';
-import { guardPermissions, resetPermissions } from './permissions';
+import { loadStore, store, SavedTab } from './store';
+import { allowsNotifications, guardPermissions, resetPermissions, setSitePermission, sitePermissions } from './permissions';
 import { isExternal, openExternal, showContextMenu, watchDownloads } from './web-features';
 import { parseNetwork } from '../shared/network';
+import { parseAppearance } from '../shared/appearance';
+import { secureOrigin } from '../shared/permissions';
 import { parseSuggestions, searchHistory, suggestQuery } from '../shared/suggest';
-import { GROUP_COLORS, moveToGroup, patchGroup, placeTab } from '../shared/groups';
-import { allHistory, clearHistory, loadHistory, recordVisit, removeVisit, retitle } from './history';
-import type { BrowserState, GroupState, TabDrop } from '../shared/types';
+import { GROUP_COLORS, moveToGroup, patchGroup, placeTab, reviveGroups } from '../shared/groups';
+import { allHistory, clearHistory, loadHistory, recordVisit, removeVisit, retitle, setFavicon } from './history';
+import type { BrowserState, GroupState, SiteInfo, TabDrop } from '../shared/types';
 
-const CHROME_HEIGHT = 112; // tab strip 40 + toolbar 44 + favorites bar 28
+const CHROME_HEIGHT = 120; // tab strip 40 + toolbar 44 + pinned bar 36
 const WEB_PARTITION = 'persist:browser';
 const IS_MAC = process.platform === 'darwin';
 const APP_NAME = 'Ambaser';
@@ -30,6 +32,8 @@ app.commandLine.appendSwitch('disable-features', 'SpareRendererForSitePerProcess
 const dataFolder = app.getPath('userData');
 app.setName(APP_NAME);
 app.setPath('userData', dataFolder);
+// Some sites (WhatsApp Web) refuse browser names they do not know, so present as the Chrome engine this is.
+app.userAgentFallback = app.userAgentFallback.replace(new RegExp(` (${APP_NAME}|Electron)/\\S+`, 'g'), '');
 
 interface Tab {
   id: number;
@@ -92,12 +96,37 @@ function layout(w: Win): void {
   }
 }
 
+const hostOf = (url: string): string => (/^https?:/.test(url) && URL.canParse(url) ? new URL(url).host : '');
+const unreadOf = (tab: Tab): number => (hostOf(tab.url) ? unreadCount(tab.title) : 0);
+
+// Unread messages per site; two tabs of the same site count once.
+function unreadByHost(tabs: Tab[]): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const tab of tabs) {
+    const host = hostOf(tab.url);
+    if (unreadOf(tab)) counts.set(host, Math.max(counts.get(host) ?? 0, unreadOf(tab)));
+  }
+  return counts;
+}
+
+function updateDockBadge(): void {
+  const total = [...unreadByHost(windows.flatMap((w) => w.tabs)).values()].reduce((sum, n) => sum + n, 0);
+  app.dock?.setBadge(total ? String(total) : '');
+}
+
 function snapshot({ tabs, groups, activeTab }: Win): BrowserState {
+  const unread = unreadByHost(tabs);
   return {
     isActivePinned: activeTab ? store.isPinned(activeTab.url) : false,
-    favorites: store.pinned(),
-    tabs: tabs.map((t) => ({ id: t.id, groupId: t.groupId, title: t.title, url: displayUrl(t.url), favicon: t.favicon, loading: t.loading, sleeping: t.sleeping })),
+    tabs: tabs.map((t) => ({ id: t.id, groupId: t.groupId, title: t.title, url: displayUrl(t.url), favicon: t.favicon, loading: t.loading, sleeping: t.sleeping, unread: unreadOf(t) })),
+    favorites: store.pinned().map((site) => ({
+      url: site.url,
+      title: withoutUnread(site.title),
+      favicon: site.favicon ?? tabs.find((t) => hostOf(t.url) === hostOf(site.url))?.favicon ?? null,
+      unread: unread.get(hostOf(site.url)) ?? 0,
+    })),
     groups,
+    appearance: store.appearance(),
     activeId: activeTab ? activeTab.id : null,
     canGoBack: activeTab ? activeTab.view.webContents.navigationHistory.canGoBack() : false,
     canGoForward: activeTab ? activeTab.view.webContents.navigationHistory.canGoForward() : false,
@@ -106,6 +135,7 @@ function snapshot({ tabs, groups, activeTab }: Win): BrowserState {
 
 function broadcast(w: Win): void {
   if (!w.win.isDestroyed() && !w.chrome.webContents.isDestroyed()) w.chrome.webContents.send('state', snapshot(w));
+  updateDockBadge();
 }
 
 function activate(w: Win, tab: Tab): void {
@@ -121,9 +151,7 @@ function activate(w: Win, tab: Tab): void {
   w.win.contentView.addChildView(w.chrome); // keep the chrome on top so the dropdown is not hidden
   layout(w);
   broadcast(w);
-  // Like Chrome: an empty tab is ready for typing; a loaded one gets the keyboard, so its URL is not selected.
-  if (tab.url === BLANK_URL || tab.url === HOME_URL) focusAddress(w);
-  else tab.view.webContents.focus();
+  focusAddress(w);
 }
 
 const SLEEP_AFTER_MS = 10 * 60 * 1000;
@@ -133,7 +161,8 @@ function sleepTab(w: Win, tab: Tab): void {
   const wc = tab.view.webContents;
   const idle = Date.now() - tab.lastActive > SLEEP_AFTER_MS;
   const keep = tab === w.activeTab || tab.sleeping || tab.loading || !idle || wc.isCurrentlyAudible() || wc.isDevToolsOpened() || !/^https?:/.test(tab.url);
-  if (keep) return;
+  // Chat and mail stay awake, or new messages would stop showing up.
+  if (keep || allowsNotifications(wc.session, tab.url) || unreadOf(tab) || hostOf(tab.url) === 'web.whatsapp.com') return;
   tab.sleeping = true;
   load(wc, 'about:blank');
   broadcast(w);
@@ -142,11 +171,14 @@ function sleepTab(w: Win, tab: Tab): void {
 function wake(tab: Tab): void {
   tab.sleeping = false;
   const wc = tab.view.webContents;
-  if (wc.navigationHistory.canGoBack()) wc.navigationHistory.goBack();
-  else load(wc, tab.url);
+  const history = wc.navigationHistory;
+  if (!history.canGoBack()) return load(wc, tab.url);
+  // Drop the blank entry sleeping left behind, so Forward does not lead to an empty page.
+  wc.once('did-navigate', () => history.removeEntryAtIndex(history.getActiveIndex() + 1));
+  history.goBack();
 }
 
-// An empty tab's keyboard goes to the address bar.
+// After switching tabs the keyboard goes to the address bar.
 function focusAddress(w: Win): void {
   if (w.chrome.webContents.isDestroyed()) return;
   w.chrome.webContents.focus();
@@ -326,6 +358,7 @@ function createTab(w: Win, url: string, groupId: number | null = null): void {
   wc.on('page-favicon-updated', (_event, favicons) => {
     if (tab.sleeping) return;
     tab.favicon = favicons[0] ?? null;
+    if (tab.favicon && !w.incognito) setFavicon(tab.url, tab.favicon);
     broadcast(w);
   });
   const onNav = (): void => {
@@ -437,6 +470,28 @@ function onQuery(channel: string, handler: (w: Win, arg: string) => unknown): vo
   });
 }
 
+// The active tab's site. Taken from the tab itself, never from what the UI says.
+function siteInfo(w: Win): SiteInfo | null {
+  const tab = w.activeTab;
+  const url = tab ? displayUrl(tab.url) : '';
+  if (!tab || !/^https?:/.test(url) || !URL.canParse(url)) return null;
+  const ses = tab.view.webContents.session;
+  const { origin, host, protocol } = new URL(url);
+  return {
+    origin,
+    host,
+    secure: protocol === 'https:',
+    acceptedCertificate: protocol === 'https:' && hasAcceptedCertificate(ses, host),
+    permissions: secureOrigin(url) ? sitePermissions(ses, origin) : null,
+  };
+}
+
+// Changes apply only while the tab is still on the site the user was looking at.
+function onSite(w: Win, origin: unknown, change: (ses: Electron.Session, site: SiteInfo) => void): void {
+  const site = siteInfo(w);
+  if (site && site.origin === origin && w.activeTab) change(w.activeTab.view.webContents.session, site);
+}
+
 // Asks Google for completions. Sent without cookies; a failure just means no suggestions.
 async function fetchSuggestions(input: string): Promise<string[]> {
   const query = suggestQuery(input);
@@ -521,6 +576,22 @@ function registerIpc(): void {
     w.dropdownHeight = typeof height === 'number' && Number.isFinite(height) ? Math.round(height) : 0;
     layout(w);
   });
+  onCommand('appearance:set', (_w, input) => {
+    store.setAppearance(parseAppearance(input));
+    applyAppearance();
+    for (const w of windows) {
+      broadcast(w);
+      for (const tab of w.tabs) if (tab.url === HOME_URL) tab.view.webContents.reload(); // it reads the theme when it loads
+    }
+  });
+  onQuery('site:info', (w) => siteInfo(w));
+  onQuery('site:permission', (w, json) => {
+    const { origin, kind, value } = JSON.parse(json);
+    onSite(w, origin, (ses, site) => {
+      if (site.permissions) setSitePermission(ses, site.origin, kind, value);
+    });
+  });
+  onQuery('site:forget-certificate', (w, origin) => onSite(w, origin, (ses, site) => forgetCertificate(ses, site.host)));
   onQuery('history:search', (_w, query) => searchHistory(allHistory(), query));
   onQuery('history:remove', (_w, url) => removeVisit(url));
   onQuery('history:list', (_w, query) => searchHistory(allHistory(), query, Infinity));
@@ -535,15 +606,23 @@ function registerIpc(): void {
     else wc.stopFindInPage('clearSelection');
   });
   onCommand('find:stop', stopFind);
-  onQuery('data:clear', async (_w, kind) => {
+  onQuery('data:clear', async (w, kind) => {
+    const warnings: Record<string, string> = {
+      cache: 'Clear the cache?',
+      cookies: 'Clear cookies and site data? You will be signed out of websites.',
+      history: 'Clear all browsing history?',
+      all: 'Clear everything? History, cache, cookies and site data are removed, and you will be signed out of websites.',
+    };
+    if (!Object.hasOwn(warnings, kind)) return false;
+    // Cancel is the default, so pressing Return or Escape deletes nothing.
+    const { response } = await dialog.showMessageBox(w.win, { type: 'warning', message: warnings[kind], detail: 'This cannot be undone.', buttons: ['Cancel', 'Clear'], defaultId: 0, cancelId: 0 });
+    if (response !== 1) return false;
     const ses = session.fromPartition(WEB_PARTITION); // incognito partitions live in memory only
     const all = kind === 'all';
     if (all || kind === 'cache') await ses.clearCache();
-    if (all || kind === 'cookies') {
-      await ses.clearStorageData();
-      store.clearTrustedHosts();
-    }
+    if (all || kind === 'cookies') await ses.clearStorageData();
     if (all || kind === 'history') clearHistory();
+    return true;
   });
   onQuery('network:get', () => store.network());
   onQuery('network:set', async (_w, json) => {
@@ -562,7 +641,15 @@ function registerIpc(): void {
   onQuery('suggest', (w, query) => (w.incognito ? [] : fetchSuggestions(query)));
 }
 
-function createWindow(incognito = false): Win {
+// The macOS blur material: "hud" is always dark, so light mode needs another one.
+const glass = (): 'hud' | 'under-window' => (nativeTheme.shouldUseDarkColors ? 'hud' : 'under-window');
+
+// Setting themeSource drives prefers-color-scheme in every page, including websites.
+function applyAppearance(): void {
+  nativeTheme.themeSource = store.appearance().mode;
+}
+
+function createWindow(incognito = false, saved: SavedTab[] = []): Win {
   const chromePreferences = { ...webPreferences, preload: path.join(__dirname, '../preload/preload.js') };
   const win = new BrowserWindow({
     width: 1200,
@@ -572,7 +659,7 @@ function createWindow(incognito = false): Win {
     show: false, // shown once the chrome UI has painted, so there is no blank flash
     backgroundColor: '#1f2125',
     // macOS glass: the system blurs what is behind the window; the chrome draws its own window buttons.
-    ...(IS_MAC ? { titleBarStyle: 'hidden' as const, vibrancy: 'hud' as const, visualEffectState: 'active' as const, backgroundColor: '#00000000' } : {}),
+    ...(IS_MAC ? { titleBarStyle: 'hidden' as const, vibrancy: glass(), visualEffectState: 'active' as const, backgroundColor: '#00000000' } : {}),
     webPreferences: chromePreferences,
   });
   const chrome = new WebContentsView({ webPreferences: chromePreferences });
@@ -580,9 +667,6 @@ function createWindow(incognito = false): Win {
   const partition = incognito ? `incognito-${++incognitoCount}` : WEB_PARTITION;
   const w: Win = { win, chrome, tabs: [], groups: [], activeTab: null, dropdownHeight: 0, incognito, partition, pageFullscreen: false, finding: false, closed: [] };
   registerPages(partition);
-  // WhatsApp Web rejects UAs containing "Electron/" or the app name; present as plain Chrome.
-  const ses = session.fromPartition(partition);
-  ses.setUserAgent(ses.getUserAgent().replace(/\s(Electron|Ambaser)\/\S+/gi, ''));
   guardPermissions(partition);
   watchDownloads(partition);
   windows.push(w);
@@ -597,16 +681,18 @@ function createWindow(incognito = false): Win {
     hideNativeButtons();
     win.on('leave-full-screen', hideNativeButtons);
   }
-  // Remembered for the home page's "Last opened" list; incognito tabs are never saved.
+  // Remembered so the next start can reopen these tabs; incognito tabs are never saved.
   win.on('close', () => {
     if (incognito) return;
-    const open = w.tabs.filter((t) => /^https?:/.test(t.url));
-    store.setLastSession(open.map((t) => ({ url: t.url, title: t.title, favicon: t.favicon })));
+    // A tab showing an error page is saved as the page that failed, so being offline does not lose it.
+    const open = w.tabs.map((t) => ({ url: displayUrl(t.url), title: t.title, favicon: t.favicon, groupId: t.groupId, active: t === w.activeTab }));
+    store.setLastSession(open.filter((t) => isRestorable(t.url)), w.groups);
   });
   win.on('closed', () => {
     windows.splice(windows.indexOf(w), 1);
     for (const tab of w.tabs.splice(0)) tab.view.webContents.close();
     chrome.webContents.close();
+    updateDockBadge();
   });
 
   chrome.webContents.once('did-finish-load', () => win.show());
@@ -618,8 +704,25 @@ function createWindow(incognito = false): Win {
   chrome.webContents.on('preload-error', (_e, file, err) => console.error(`preload error ${file}: ${err.message}`));
   chrome.webContents.on('console-message', (event) => console.log(`[chrome] ${event.message}`));
   void chrome.webContents.loadFile(path.join(__dirname, '../renderer/index.html'), { query: incognito ? { incognito: '1' } : {} });
-  createTab(w, HOME_URL);
+  if (saved.length === 0) createTab(w, HOME_URL);
+  else restoreTabs(w, saved);
   return w;
+}
+
+// The first window of a run (or after all were closed) reopens the tabs that were open last time.
+function reopenWindow(): void {
+  createWindow(false, store.lastSession().filter((t) => isRestorable(t.url)));
+}
+
+const isRestorable = (url: string): boolean => url === HOME_URL || (/^https?:/.test(url) && isAllowedUrl(url));
+
+// Puts back the saved tabs, their groups and the tab that was in front.
+function restoreTabs(w: Win, saved: SavedTab[]): void {
+  const groups = reviveGroups(store.lastGroups(), saved.map((t) => t.groupId), () => nextGroupId++);
+  w.groups.push(...groups.values());
+  for (const site of saved) createTab(w, site.url, groups.get(site.groupId ?? -1)?.id ?? null);
+  const front = w.tabs[saved.findIndex((t) => t.active)];
+  if (front) activate(w, front);
 }
 
 // Runs something on the focused window, if there is one.
@@ -657,11 +760,6 @@ function reopenTab(): void {
   const w = focusedWindow();
   const url = w?.closed.pop();
   if (w && url) createTab(w, url);
-}
-
-function restoreSession(): void {
-  const w = focusedWindow() ?? createWindow();
-  for (const site of store.lastSession()) if (isAllowedUrl(site.url) && !isAppUrl(site.url)) createTab(w, site.url);
 }
 
 function openTab(): void {
@@ -716,7 +814,10 @@ function buildMenu(): void {
           { label: 'Zoom Out', accelerator: 'CmdOrCtrl+-', click: zoom(-0.5) },
           { label: 'Actual Size', accelerator: 'CmdOrCtrl+0', click: zoom(null) },
           { type: 'separator' },
-          { label: 'Reset Site Permissions', click: resetPermissions },
+          { label: 'Reset Site Permissions', click: () => {
+            resetPermissions();
+            forgetCertificates();
+          } },
           { label: 'Open Downloads Folder', click: () => void shell.openPath(app.getPath('downloads')) },
         ],
       },
@@ -732,7 +833,6 @@ function buildMenu(): void {
               w.chrome.webContents.send('history:show');
             },
           },
-          { label: 'Restore Last Session', click: restoreSession },
         ],
       },
       { role: 'windowMenu' },
@@ -744,17 +844,21 @@ app.whenReady().then(async () => {
   app.dock?.setIcon(ICON);
   loadHistory();
   loadStore();
+  applyAppearance();
+  nativeTheme.on('updated', () => {
+    if (IS_MAC) for (const w of windows) w.win.setVibrancy(glass());
+  });
   // Network settings go in before the first page loads.
   applyDns(store.network());
   await applyProxy(store.network(), [WEB_PARTITION]);
   registerIpc();
   buildMenu();
-  createWindow();
+  reopenWindow();
   setInterval(() => {
     for (const w of windows) for (const tab of w.tabs) sleepTab(w, tab);
   }, 60 * 1000);
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow();
+    if (BrowserWindow.getAllWindows().length === 0) reopenWindow();
   });
 });
 
@@ -763,7 +867,7 @@ app.on('window-all-closed', () => {
 });
 
 // Electron rejects bad certificates. Accept one only for a host the user trusted on the warning page.
-app.on('certificate-error', (event, webContents, url, _error, _certificate, callback) => {
+app.on('certificate-error', (event, webContents, url, _error, certificate, callback) => {
   event.preventDefault();
-  callback(isTrusted(webContents.session, url));
+  callback(isTrusted(webContents.session, url, certificate.fingerprint));
 });

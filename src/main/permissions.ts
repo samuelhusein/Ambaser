@@ -1,6 +1,7 @@
 // Asks the user before a site gets notifications, location, camera, microphone or the clipboard.
 import { BrowserWindow, dialog, ipcMain, session, WebContents } from 'electron';
-import { isHarmless, kindsOf, question, secureOrigin } from '../shared/permissions';
+import { isHarmless, KINDS, kindsOf, question, secureOrigin } from '../shared/permissions';
+import type { PermissionValue } from '../shared/types';
 import { store } from './store';
 
 // Incognito answers live only as long as the app.
@@ -65,6 +66,31 @@ ipcMain.on('permission:notifications', (event) => {
   const answer = event.sender.session.isPersistent() ? store.permission(key) : temporary.get(key);
   event.returnValue = !origin ? 'denied' : answer === undefined ? 'default' : answer ? 'granted' : 'denied';
 });
+
+// True if the user let this page send notifications.
+export function allowsNotifications(ses: Electron.Session, url: string): boolean {
+  const key = `${secureOrigin(url)} notifications`;
+  return (ses.isPersistent() ? store.permission(key) : temporary.get(key)) === true;
+}
+
+// The saved answers for one site, as shown by the address bar's site button.
+export function sitePermissions(ses: Electron.Session, origin: string): { kind: string; value: PermissionValue }[] {
+  return KINDS.map((kind) => {
+    const key = `${origin} ${kind}`;
+    const answer = ses.isPersistent() ? store.permission(key) : temporary.get(key);
+    return { kind, value: answer === undefined ? 'ask' : answer ? 'allow' : 'block' };
+  });
+}
+
+export function setSitePermission(ses: Electron.Session, origin: string, kind: string, value: unknown): void {
+  if (!KINDS.includes(kind) || !['ask', 'allow', 'block'].includes(value as string)) return;
+  const key = `${origin} ${kind}`;
+  if (value === 'ask') {
+    if (ses.isPersistent()) store.removePermission(key);
+    else temporary.delete(key);
+  } else if (ses.isPersistent()) store.setPermission(key, value === 'allow');
+  else temporary.set(key, value === 'allow');
+}
 
 export function resetPermissions(): void {
   temporary.clear();

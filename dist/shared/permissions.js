@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.question = exports.isHarmless = void 0;
+exports.question = exports.isHarmless = exports.KINDS = void 0;
 exports.kindsOf = kindsOf;
 exports.secureOrigin = secureOrigin;
 // Which site permissions are harmless, which the user is asked about; everything else is refused.
@@ -13,6 +13,7 @@ const QUESTIONS = {
     microphone: 'use your microphone',
     'clipboard-read': 'read your clipboard',
 };
+exports.KINDS = Object.keys(QUESTIONS);
 const isHarmless = (permission) => HARMLESS.has(permission);
 exports.isHarmless = isHarmless;
 const question = (kind) => (Object.hasOwn(QUESTIONS, kind) ? QUESTIONS[kind] : undefined);

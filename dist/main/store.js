@@ -40,16 +40,18 @@ exports.loadStore = loadStore;
 const electron_1 = require("electron");
 const fs = __importStar(require("fs"));
 const path = __importStar(require("path"));
+const appearance_1 = require("../shared/appearance");
 const network_1 = require("../shared/network");
-let data = { pinned: [], lastSession: [], network: network_1.DEFAULT_NETWORK, permissions: {} };
+let data = { pinned: [], lastSession: [], lastGroups: [], network: network_1.DEFAULT_NETWORK, appearance: (0, appearance_1.parseAppearance)(null), permissions: {}, certificates: {} };
 const file = () => path.join(electron_1.app.getPath('userData'), 'browser-data.json');
 const sites = (list) => Array.isArray(list) ? list.filter((e) => typeof e?.url === 'string' && typeof e?.title === 'string') : [];
+const strings = (input) => typeof input === 'object' && input !== null ? Object.fromEntries(Object.entries(input).filter(([, v]) => typeof v === 'string')) : {};
 const answers = (input) => typeof input === 'object' && input !== null ? Object.fromEntries(Object.entries(input).filter(([, v]) => typeof v === 'boolean')) : {};
 function loadStore() {
     try {
         const parsed = JSON.parse(fs.readFileSync(file(), 'utf8'));
         const network = (0, network_1.parseNetwork)(parsed?.network);
-        data = { pinned: sites(parsed?.pinned), lastSession: sites(parsed?.lastSession), network: typeof network === 'string' ? network_1.DEFAULT_NETWORK : network, permissions: answers(parsed?.permissions) };
+        data = { pinned: sites(parsed?.pinned), lastSession: sites(parsed?.lastSession), lastGroups: Array.isArray(parsed?.lastGroups) ? parsed.lastGroups : [], network: typeof network === 'string' ? network_1.DEFAULT_NETWORK : network, permissions: answers(parsed?.permissions), certificates: strings(parsed?.certificates), appearance: (0, appearance_1.parseAppearance)(parsed?.appearance) };
     }
     catch (err) {
         if (err.code !== 'ENOENT')
@@ -70,8 +72,30 @@ exports.store = {
         data.permissions[key] = allowed;
         save();
     },
+    certificate: (host) => (Object.hasOwn(data.certificates, host) ? data.certificates[host] : undefined),
+    setCertificate(host, fingerprint) {
+        data.certificates[host] = fingerprint;
+        save();
+    },
+    clearCertificates() {
+        data.certificates = {};
+        save();
+    },
+    removePermission(key) {
+        delete data.permissions[key];
+        save();
+    },
+    removeCertificate(host) {
+        delete data.certificates[host];
+        save();
+    },
     clearPermissions() {
         data.permissions = {};
+        save();
+    },
+    appearance: () => data.appearance,
+    setAppearance(appearance) {
+        data.appearance = appearance;
         save();
     },
     network: () => data.network,
@@ -81,6 +105,7 @@ exports.store = {
     },
     pinned: () => data.pinned,
     lastSession: () => data.lastSession,
+    lastGroups: () => data.lastGroups,
     isPinned: (url) => data.pinned.some((s) => s.url === url),
     togglePin(entry) {
         if (exports.store.isPinned(entry.url))
@@ -94,8 +119,9 @@ exports.store = {
         data.pinned = data.pinned.filter((s) => s.url !== url);
         save();
     },
-    setLastSession(entries) {
-        data.lastSession = entries;
+    setLastSession(tabs, groups) {
+        data.lastSession = tabs;
+        data.lastGroups = groups;
         save();
     },
 };

@@ -42,6 +42,15 @@ test('normalizeInput rejects empty and blocked input', () => {
   assert.equal(normalizeInput('javascript:alert(1)'), null);
 });
 
+test('unreadCount reads the number a site puts before its title', () => {
+  const { unreadCount, withoutUnread } = require('../dist/shared/url');
+  assert.equal(unreadCount('(2) WhatsApp'), 2);
+  assert.equal(unreadCount('(99+) Inbox'), 99);
+  assert.equal(unreadCount('WhatsApp'), 0);
+  assert.equal(unreadCount('Film (2024)'), 0);
+  assert.equal(withoutUnread('(2) WhatsApp'), 'WhatsApp');
+});
+
 test('displayUrl shows the failed address for error pages only', () => {
   const { displayUrl, loadErrorUrl, certErrorUrl } = require('../dist/shared/url');
   const target = 'https://nope.invalid/a?b=1&c=2';

@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { moveToGroup, patchGroup } = require('../dist/shared/groups');
+const { moveToGroup, patchGroup, reviveGroups } = require('../dist/shared/groups');
 
 const make = () => ['a', 'b', 'c', 'd'].map((id) => ({ id, groupId: null }));
 const order = (tabs) => tabs.map((t) => `${t.id}${t.groupId ?? ''}`).join(' ');
@@ -44,4 +44,14 @@ test('placeTab reorders and takes the group of the drop target', () => {
   assert.equal(order(tabs), 'd a c1 b');
   placeTab(tabs, a, a, true);
   assert.equal(order(tabs), 'd a c1 b');
+});
+
+test('reviveGroups keeps only used, valid groups under new ids', () => {
+  let id = 10;
+  const saved = [{ id: 3, name: 'Work', color: 'blue', icon: 'star', collapsed: true }, { id: 4, name: 'unused' }, null, { id: 5, color: 'nope' }];
+  const groups = reviveGroups(saved, [3, 3, 5, null], () => id++);
+  assert.deepEqual([...groups.keys()], [3, 5]);
+  assert.deepEqual(groups.get(3), { id: 10, name: 'Work', color: 'blue', icon: 'star', collapsed: true });
+  assert.equal(groups.get(5).color, 'grey');
+  assert.equal(reviveGroups('junk', [1], () => 1).size, 0);
 });

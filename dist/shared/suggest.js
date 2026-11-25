@@ -11,7 +11,8 @@ const MAX_ENTRIES = 1000;
 function addVisit(list, url, title, time = Date.now()) {
     if (!/^https?:\/\//i.test(url))
         return list;
-    return [{ url, title, time }, ...list.filter((e) => e.url !== url)].slice(0, MAX_ENTRIES);
+    const favicon = list.find((e) => e.url === url)?.favicon; // a revisit keeps its icon
+    return [{ url, title, time, ...(favicon ? { favicon } : {}) }, ...list.filter((e) => e.url !== url)].slice(0, MAX_ENTRIES);
 }
 // Every typed word must appear in the title or URL. An empty query returns the latest visits.
 function searchHistory(list, query, limit = 5) {

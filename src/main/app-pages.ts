@@ -2,27 +2,52 @@
 import { protocol, session, WebContents } from 'electron';
 import * as fs from 'fs';
 import * as path from 'path';
-import { CERT_ERROR_HOST, LOAD_ERROR_HOST } from '../shared/url';
+import { CERT_ERROR_HOST, LOAD_ERROR_HOST, normalizeInput } from '../shared/url';
+import { allHistory } from './history';
 import { store } from './store';
 
 const CONTENT_TYPES: Record<string, string> = { html: 'text/html', css: 'text/css', js: 'text/javascript' };
 
-// Hosts the user chose to trust despite a bad certificate. Remembered on disk for the normal profile;
-// incognito sessions keep them in memory only.
-const trustedHosts = new Map<Electron.Session, Set<string>>();
+// Bad certificates the user accepted: host -> fingerprint, so a different certificate warns again.
+// Kept on disk for normal windows, in memory for incognito ones.
+const temporary = new Map<Electron.Session, Map<string, string>>();
+// The last certificate each session refused per host: what "Proceed anyway" accepts.
+const refused = new WeakMap<Electron.Session, Map<string, string>>();
 
 // Must run before app is ready.
 export function registerScheme(): void {
   protocol.registerSchemesAsPrivileged([{ scheme: 'mybrowser', privileges: { standard: true, secure: true, supportFetchAPI: true } }]);
 }
 
-export function isTrusted(ses: Electron.Session, url: string): boolean {
-  try {
-    const host = new URL(url).host;
-    return (trustedHosts.get(ses)?.has(host) ?? false) || (ses.isPersistent() && store.isTrustedHost(host));
-  } catch {
-    return false;
-  }
+export function isTrusted(ses: Electron.Session, url: string, fingerprint: string): boolean {
+  if (!URL.canParse(url)) return false;
+  const { host } = new URL(url);
+  const accepted = ses.isPersistent() ? store.certificate(host) : temporary.get(ses)?.get(host);
+  if (accepted === fingerprint) return true;
+  const seen = refused.get(ses) ?? new Map<string, string>();
+  refused.set(ses, seen.set(host, fingerprint));
+  return false;
+}
+
+function trust(ses: Electron.Session, host: string): void {
+  const fingerprint = refused.get(ses)?.get(host);
+  if (!fingerprint) return;
+  if (ses.isPersistent()) store.setCertificate(host, fingerprint);
+  else temporary.set(ses, (temporary.get(ses) ?? new Map<string, string>()).set(host, fingerprint));
+}
+
+export function hasAcceptedCertificate(ses: Electron.Session, host: string): boolean {
+  return (ses.isPersistent() ? store.certificate(host) : temporary.get(ses)?.get(host)) !== undefined;
+}
+
+export function forgetCertificate(ses: Electron.Session, host: string): void {
+  if (ses.isPersistent()) store.removeCertificate(host);
+  else temporary.get(ses)?.delete(host);
+}
+
+export function forgetCertificates(): void {
+  temporary.clear();
+  store.clearCertificates();
 }
 
 // No file path ever comes from the request: only plain names inside the page's own folder.
@@ -39,10 +64,17 @@ function serveFile(folder: string, pathname: string): Response {
 }
 
 // Read-only: any website can send requests here, so nothing served by the protocol changes anything.
-function handle(request: Request): Response {
+function handle(request: Request, incognito: boolean): Response {
   const url = new URL(request.url);
   if (request.method !== 'GET' || !['home', CERT_ERROR_HOST, LOAD_ERROR_HOST].includes(url.hostname)) return new Response('Not found', { status: 404 });
-  if (url.hostname === 'home' && url.pathname === '/api/data') return Response.json({ pinned: store.pinned(), lastSession: store.lastSession() });
+  if (url.hostname === 'home' && url.pathname === '/api/data') {
+    // An incognito home page shows the pinned sites only, nothing about past browsing.
+    // A page without a saved icon borrows one from another page of the same site.
+    const known = new Map<string, string>();
+    for (const e of [...store.pinned(), ...(incognito ? [] : allHistory())]) if (e.favicon && URL.canParse(e.url)) known.set(new URL(e.url).host, e.favicon);
+    const withIcon = <T extends { url: string; favicon?: string | null }>(e: T): T => ({ ...e, favicon: e.favicon || (URL.canParse(e.url) ? known.get(new URL(e.url).host) : undefined) });
+    return Response.json({ incognito, theme: store.appearance().theme, pinned: store.pinned().map(withIcon), recent: incognito ? [] : allHistory().slice(0, 6).map(withIcon) });
+  }
   return serveFile(url.hostname, url.pathname);
 }
 
@@ -58,11 +90,14 @@ export function runPageAction(wc: WebContents, target: string): boolean {
     wc.reload();
     return true;
   }
+  if (action.href.startsWith('mybrowser://home/open') && from.startsWith('mybrowser://home/')) {
+    const target = normalizeInput(action.searchParams.get('q') ?? '');
+    if (target) wc.loadURL(target).catch((err: Error) => console.error(`loadURL ${target}: ${err.message}`));
+    return true;
+  }
   if (action.href.startsWith(`mybrowser://${CERT_ERROR_HOST}/trust`) && from.startsWith(`mybrowser://${CERT_ERROR_HOST}/`)) {
     if (/^https:/i.test(url) && URL.canParse(url)) {
-      const host = new URL(url).host;
-      trustedHosts.get(wc.session)?.add(host);
-      if (wc.session.isPersistent()) store.trustHost(host);
+      trust(wc.session, new URL(url).host);
       wc.loadURL(url).catch((err: Error) => console.error(`loadURL ${url}: ${err.message}`));
     }
     return true;
@@ -76,6 +111,5 @@ export function registerPages(partition: string): void {
   if (registered.has(partition)) return;
   registered.add(partition);
   const ses = session.fromPartition(partition);
-  trustedHosts.set(ses, new Set());
-  ses.protocol.handle('mybrowser', handle);
+  ses.protocol.handle('mybrowser', (request) => handle(request, !partition.startsWith('persist:')));
 }

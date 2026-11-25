@@ -4,6 +4,7 @@ exports.GROUP_ICONS = exports.GROUP_COLORS = void 0;
 exports.moveToGroup = moveToGroup;
 exports.patchGroup = patchGroup;
 exports.placeTab = placeTab;
+exports.reviveGroups = reviveGroups;
 exports.GROUP_COLORS = ['grey', 'blue', 'red', 'yellow', 'green', 'pink', 'purple', 'cyan'];
 exports.GROUP_ICONS = ['none', 'star', 'briefcase', 'book', 'code', 'play', 'cart', 'heart'];
 // Moves a tab into a group (or out, with null), keeping the members of every group next to each other.
@@ -41,4 +42,16 @@ function placeTab(tabs, tab, target, after) {
     tabs.splice(from, 1);
     tab.groupId = target ? target.groupId : null;
     tabs.splice(target ? tabs.indexOf(target) + (after ? 1 : 0) : tabs.length, 0, tab);
+}
+// Rebuilds saved (untrusted) groups for the restored tabs, under fresh ids. Keyed by the saved id.
+function reviveGroups(saved, used, newId) {
+    const groups = new Map();
+    for (const item of Array.isArray(saved) ? saved : []) {
+        if (!used.includes(item?.id) || groups.has(item.id))
+            continue;
+        const group = { id: newId(), name: '', color: 'grey', icon: 'none', collapsed: false };
+        patchGroup(group, item);
+        groups.set(item.id, group);
+    }
+    return groups;
 }

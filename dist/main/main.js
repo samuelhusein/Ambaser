@@ -42,10 +42,12 @@ const store_1 = require("./store");
 const permissions_1 = require("./permissions");
 const web_features_1 = require("./web-features");
 const network_2 = require("../shared/network");
+const appearance_1 = require("../shared/appearance");
+const permissions_2 = require("../shared/permissions");
 const suggest_1 = require("../shared/suggest");
 const groups_1 = require("../shared/groups");
 const history_1 = require("./history");
-const CHROME_HEIGHT = 112; // tab strip 40 + toolbar 44 + favorites bar 28
+const CHROME_HEIGHT = 120; // tab strip 40 + toolbar 44 + pinned bar 36
 const WEB_PARTITION = 'persist:browser';
 const IS_MAC = process.platform === 'darwin';
 const APP_NAME = 'Ambaser';
@@ -60,6 +62,8 @@ electron_1.app.commandLine.appendSwitch('disable-features', 'SpareRendererForSit
 const dataFolder = electron_1.app.getPath('userData');
 electron_1.app.setName(APP_NAME);
 electron_1.app.setPath('userData', dataFolder);
+// Some sites (WhatsApp Web) refuse browser names they do not know, so present as the Chrome engine this is.
+electron_1.app.userAgentFallback = electron_1.app.userAgentFallback.replace(new RegExp(` (${APP_NAME}|Electron)/\\S+`, 'g'), '');
 const webPreferences = {
     nodeIntegration: false,
     contextIsolation: true,
@@ -90,12 +94,35 @@ function layout(w) {
         activeTab.view.setBounds({ x: 0, y: CHROME_HEIGHT, width, height: Math.max(0, height - CHROME_HEIGHT) });
     }
 }
+const hostOf = (url) => (/^https?:/.test(url) && URL.canParse(url) ? new URL(url).host : '');
+const unreadOf = (tab) => (hostOf(tab.url) ? (0, url_1.unreadCount)(tab.title) : 0);
+// Unread messages per site; two tabs of the same site count once.
+function unreadByHost(tabs) {
+    const counts = new Map();
+    for (const tab of tabs) {
+        const host = hostOf(tab.url);
+        if (unreadOf(tab))
+            counts.set(host, Math.max(counts.get(host) ?? 0, unreadOf(tab)));
+    }
+    return counts;
+}
+function updateDockBadge() {
+    const total = [...unreadByHost(windows.flatMap((w) => w.tabs)).values()].reduce((sum, n) => sum + n, 0);
+    electron_1.app.dock?.setBadge(total ? String(total) : '');
+}
 function snapshot({ tabs, groups, activeTab }) {
+    const unread = unreadByHost(tabs);
     return {
         isActivePinned: activeTab ? store_1.store.isPinned(activeTab.url) : false,
-        favorites: store_1.store.pinned(),
-        tabs: tabs.map((t) => ({ id: t.id, groupId: t.groupId, title: t.title, url: (0, url_1.displayUrl)(t.url), favicon: t.favicon, loading: t.loading, sleeping: t.sleeping })),
+        tabs: tabs.map((t) => ({ id: t.id, groupId: t.groupId, title: t.title, url: (0, url_1.displayUrl)(t.url), favicon: t.favicon, loading: t.loading, sleeping: t.sleeping, unread: unreadOf(t) })),
+        favorites: store_1.store.pinned().map((site) => ({
+            url: site.url,
+            title: (0, url_1.withoutUnread)(site.title),
+            favicon: site.favicon ?? tabs.find((t) => hostOf(t.url) === hostOf(site.url))?.favicon ?? null,
+            unread: unread.get(hostOf(site.url)) ?? 0,
+        })),
         groups,
+        appearance: store_1.store.appearance(),
         activeId: activeTab ? activeTab.id : null,
         canGoBack: activeTab ? activeTab.view.webContents.navigationHistory.canGoBack() : false,
         canGoForward: activeTab ? activeTab.view.webContents.navigationHistory.canGoForward() : false,
@@ -104,6 +131,7 @@ function snapshot({ tabs, groups, activeTab }) {
 function broadcast(w) {
     if (!w.win.isDestroyed() && !w.chrome.webContents.isDestroyed())
         w.chrome.webContents.send('state', snapshot(w));
+    updateDockBadge();
 }
 function activate(w, tab) {
     if (w.activeTab === tab)
@@ -120,11 +148,7 @@ function activate(w, tab) {
     w.win.contentView.addChildView(w.chrome); // keep the chrome on top so the dropdown is not hidden
     layout(w);
     broadcast(w);
-    // Like Chrome: an empty tab is ready for typing; a loaded one gets the keyboard, so its URL is not selected.
-    if (tab.url === url_1.BLANK_URL || tab.url === url_1.HOME_URL)
-        focusAddress(w);
-    else
-        tab.view.webContents.focus();
+    focusAddress(w);
 }
 const SLEEP_AFTER_MS = 10 * 60 * 1000;
 // Frees a background page's memory by replacing it with about:blank; wake() brings it back.
@@ -132,7 +156,8 @@ function sleepTab(w, tab) {
     const wc = tab.view.webContents;
     const idle = Date.now() - tab.lastActive > SLEEP_AFTER_MS;
     const keep = tab === w.activeTab || tab.sleeping || tab.loading || !idle || wc.isCurrentlyAudible() || wc.isDevToolsOpened() || !/^https?:/.test(tab.url);
-    if (keep)
+    // Chat and mail stay awake, or new messages would stop showing up.
+    if (keep || (0, permissions_1.allowsNotifications)(wc.session, tab.url) || unreadOf(tab) || hostOf(tab.url) === 'web.whatsapp.com')
         return;
     tab.sleeping = true;
     load(wc, 'about:blank');
@@ -141,12 +166,14 @@ function sleepTab(w, tab) {
 function wake(tab) {
     tab.sleeping = false;
     const wc = tab.view.webContents;
-    if (wc.navigationHistory.canGoBack())
-        wc.navigationHistory.goBack();
-    else
-        load(wc, tab.url);
+    const history = wc.navigationHistory;
+    if (!history.canGoBack())
+        return load(wc, tab.url);
+    // Drop the blank entry sleeping left behind, so Forward does not lead to an empty page.
+    wc.once('did-navigate', () => history.removeEntryAtIndex(history.getActiveIndex() + 1));
+    history.goBack();
 }
-// An empty tab's keyboard goes to the address bar.
+// After switching tabs the keyboard goes to the address bar.
 function focusAddress(w) {
     if (w.chrome.webContents.isDestroyed())
         return;
@@ -341,6 +368,8 @@ function createTab(w, url, groupId = null) {
         if (tab.sleeping)
             return;
         tab.favicon = favicons[0] ?? null;
+        if (tab.favicon && !w.incognito)
+            (0, history_1.setFavicon)(tab.url, tab.favicon);
         broadcast(w);
     });
     const onNav = () => {
@@ -459,6 +488,28 @@ function onQuery(channel, handler) {
         return handler(w, arg);
     });
 }
+// The active tab's site. Taken from the tab itself, never from what the UI says.
+function siteInfo(w) {
+    const tab = w.activeTab;
+    const url = tab ? (0, url_1.displayUrl)(tab.url) : '';
+    if (!tab || !/^https?:/.test(url) || !URL.canParse(url))
+        return null;
+    const ses = tab.view.webContents.session;
+    const { origin, host, protocol } = new URL(url);
+    return {
+        origin,
+        host,
+        secure: protocol === 'https:',
+        acceptedCertificate: protocol === 'https:' && (0, app_pages_1.hasAcceptedCertificate)(ses, host),
+        permissions: (0, permissions_2.secureOrigin)(url) ? (0, permissions_1.sitePermissions)(ses, origin) : null,
+    };
+}
+// Changes apply only while the tab is still on the site the user was looking at.
+function onSite(w, origin, change) {
+    const site = siteInfo(w);
+    if (site && site.origin === origin && w.activeTab)
+        change(w.activeTab.view.webContents.session, site);
+}
 // Asks Google for completions. Sent without cookies; a failure just means no suggestions.
 async function fetchSuggestions(input) {
     const query = (0, suggest_1.suggestQuery)(input);
@@ -559,6 +610,25 @@ function registerIpc() {
         w.dropdownHeight = typeof height === 'number' && Number.isFinite(height) ? Math.round(height) : 0;
         layout(w);
     });
+    onCommand('appearance:set', (_w, input) => {
+        store_1.store.setAppearance((0, appearance_1.parseAppearance)(input));
+        applyAppearance();
+        for (const w of windows) {
+            broadcast(w);
+            for (const tab of w.tabs)
+                if (tab.url === url_1.HOME_URL)
+                    tab.view.webContents.reload(); // it reads the theme when it loads
+        }
+    });
+    onQuery('site:info', (w) => siteInfo(w));
+    onQuery('site:permission', (w, json) => {
+        const { origin, kind, value } = JSON.parse(json);
+        onSite(w, origin, (ses, site) => {
+            if (site.permissions)
+                (0, permissions_1.setSitePermission)(ses, site.origin, kind, value);
+        });
+    });
+    onQuery('site:forget-certificate', (w, origin) => onSite(w, origin, (ses, site) => (0, app_pages_1.forgetCertificate)(ses, site.host)));
     onQuery('history:search', (_w, query) => (0, suggest_1.searchHistory)((0, history_1.allHistory)(), query));
     onQuery('history:remove', (_w, url) => (0, history_1.removeVisit)(url));
     onQuery('history:list', (_w, query) => (0, suggest_1.searchHistory)((0, history_1.allHistory)(), query, Infinity));
@@ -576,7 +646,19 @@ function registerIpc() {
             wc.stopFindInPage('clearSelection');
     });
     onCommand('find:stop', stopFind);
-    onQuery('data:clear', async (_w, kind) => {
+    onQuery('data:clear', async (w, kind) => {
+        const warnings = {
+            cache: 'Clear the cache?',
+            cookies: 'Clear cookies and site data? You will be signed out of websites.',
+            history: 'Clear all browsing history?',
+            all: 'Clear everything? History, cache, cookies and site data are removed, and you will be signed out of websites.',
+        };
+        if (!Object.hasOwn(warnings, kind))
+            return false;
+        // Cancel is the default, so pressing Return or Escape deletes nothing.
+        const { response } = await electron_1.dialog.showMessageBox(w.win, { type: 'warning', message: warnings[kind], detail: 'This cannot be undone.', buttons: ['Cancel', 'Clear'], defaultId: 0, cancelId: 0 });
+        if (response !== 1)
+            return false;
         const ses = electron_1.session.fromPartition(WEB_PARTITION); // incognito partitions live in memory only
         const all = kind === 'all';
         if (all || kind === 'cache')
@@ -585,6 +667,7 @@ function registerIpc() {
             await ses.clearStorageData();
         if (all || kind === 'history')
             (0, history_1.clearHistory)();
+        return true;
     });
     onQuery('network:get', () => store_1.store.network());
     onQuery('network:set', async (_w, json) => {
@@ -604,7 +687,13 @@ function registerIpc() {
     // Incognito typing is never sent to Google.
     onQuery('suggest', (w, query) => (w.incognito ? [] : fetchSuggestions(query)));
 }
-function createWindow(incognito = false) {
+// The macOS blur material: "hud" is always dark, so light mode needs another one.
+const glass = () => (electron_1.nativeTheme.shouldUseDarkColors ? 'hud' : 'under-window');
+// Setting themeSource drives prefers-color-scheme in every page, including websites.
+function applyAppearance() {
+    electron_1.nativeTheme.themeSource = store_1.store.appearance().mode;
+}
+function createWindow(incognito = false, saved = []) {
     const chromePreferences = { ...webPreferences, preload: path.join(__dirname, '../preload/preload.js') };
     const win = new electron_1.BrowserWindow({
         width: 1200,
@@ -614,7 +703,7 @@ function createWindow(incognito = false) {
         show: false, // shown once the chrome UI has painted, so there is no blank flash
         backgroundColor: '#1f2125',
         // macOS glass: the system blurs what is behind the window; the chrome draws its own window buttons.
-        ...(IS_MAC ? { titleBarStyle: 'hidden', vibrancy: 'hud', visualEffectState: 'active', backgroundColor: '#00000000' } : {}),
+        ...(IS_MAC ? { titleBarStyle: 'hidden', vibrancy: glass(), visualEffectState: 'active', backgroundColor: '#00000000' } : {}),
         webPreferences: chromePreferences,
     });
     const chrome = new electron_1.WebContentsView({ webPreferences: chromePreferences });
@@ -622,9 +711,6 @@ function createWindow(incognito = false) {
     const partition = incognito ? `incognito-${++incognitoCount}` : WEB_PARTITION;
     const w = { win, chrome, tabs: [], groups: [], activeTab: null, dropdownHeight: 0, incognito, partition, pageFullscreen: false, finding: false, closed: [] };
     (0, app_pages_1.registerPages)(partition);
-    // WhatsApp Web rejects UAs containing "Electron/" or the app name; present as plain Chrome.
-    const ses = electron_1.session.fromPartition(partition);
-    ses.setUserAgent(ses.getUserAgent().replace(/\s(Electron|Ambaser)\/\S+/gi, ''));
     (0, permissions_1.guardPermissions)(partition);
     (0, web_features_1.watchDownloads)(partition);
     windows.push(w);
@@ -639,18 +725,20 @@ function createWindow(incognito = false) {
         hideNativeButtons();
         win.on('leave-full-screen', hideNativeButtons);
     }
-    // Remembered for the home page's "Last opened" list; incognito tabs are never saved.
+    // Remembered so the next start can reopen these tabs; incognito tabs are never saved.
     win.on('close', () => {
         if (incognito)
             return;
-        const open = w.tabs.filter((t) => /^https?:/.test(t.url));
-        store_1.store.setLastSession(open.map((t) => ({ url: t.url, title: t.title, favicon: t.favicon })));
+        // A tab showing an error page is saved as the page that failed, so being offline does not lose it.
+        const open = w.tabs.map((t) => ({ url: (0, url_1.displayUrl)(t.url), title: t.title, favicon: t.favicon, groupId: t.groupId, active: t === w.activeTab }));
+        store_1.store.setLastSession(open.filter((t) => isRestorable(t.url)), w.groups);
     });
     win.on('closed', () => {
         windows.splice(windows.indexOf(w), 1);
         for (const tab of w.tabs.splice(0))
             tab.view.webContents.close();
         chrome.webContents.close();
+        updateDockBadge();
     });
     chrome.webContents.once('did-finish-load', () => win.show());
     chrome.webContents.on('did-finish-load', () => {
@@ -661,8 +749,26 @@ function createWindow(incognito = false) {
     chrome.webContents.on('preload-error', (_e, file, err) => console.error(`preload error ${file}: ${err.message}`));
     chrome.webContents.on('console-message', (event) => console.log(`[chrome] ${event.message}`));
     void chrome.webContents.loadFile(path.join(__dirname, '../renderer/index.html'), { query: incognito ? { incognito: '1' } : {} });
-    createTab(w, url_1.HOME_URL);
+    if (saved.length === 0)
+        createTab(w, url_1.HOME_URL);
+    else
+        restoreTabs(w, saved);
     return w;
+}
+// The first window of a run (or after all were closed) reopens the tabs that were open last time.
+function reopenWindow() {
+    createWindow(false, store_1.store.lastSession().filter((t) => isRestorable(t.url)));
+}
+const isRestorable = (url) => url === url_1.HOME_URL || (/^https?:/.test(url) && (0, url_1.isAllowedUrl)(url));
+// Puts back the saved tabs, their groups and the tab that was in front.
+function restoreTabs(w, saved) {
+    const groups = (0, groups_1.reviveGroups)(store_1.store.lastGroups(), saved.map((t) => t.groupId), () => nextGroupId++);
+    w.groups.push(...groups.values());
+    for (const site of saved)
+        createTab(w, site.url, groups.get(site.groupId ?? -1)?.id ?? null);
+    const front = w.tabs[saved.findIndex((t) => t.active)];
+    if (front)
+        activate(w, front);
 }
 // Runs something on the focused window, if there is one.
 function onWindow(action) {
@@ -699,12 +805,6 @@ function reopenTab() {
     const url = w?.closed.pop();
     if (w && url)
         createTab(w, url);
-}
-function restoreSession() {
-    const w = focusedWindow() ?? createWindow();
-    for (const site of store_1.store.lastSession())
-        if ((0, url_1.isAllowedUrl)(site.url) && !(0, url_1.isAppUrl)(site.url))
-            createTab(w, site.url);
 }
 function openTab() {
     const w = focusedWindow();
@@ -760,7 +860,10 @@ function buildMenu() {
                 { label: 'Zoom Out', accelerator: 'CmdOrCtrl+-', click: zoom(-0.5) },
                 { label: 'Actual Size', accelerator: 'CmdOrCtrl+0', click: zoom(null) },
                 { type: 'separator' },
-                { label: 'Reset Site Permissions', click: permissions_1.resetPermissions },
+                { label: 'Reset Site Permissions', click: () => {
+                        (0, permissions_1.resetPermissions)();
+                        (0, app_pages_1.forgetCertificates)();
+                    } },
                 { label: 'Open Downloads Folder', click: () => void electron_1.shell.openPath(electron_1.app.getPath('downloads')) },
             ],
         },
@@ -776,7 +879,6 @@ function buildMenu() {
                         w.chrome.webContents.send('history:show');
                     },
                 },
-                { label: 'Restore Last Session', click: restoreSession },
             ],
         },
         { role: 'windowMenu' },
@@ -786,12 +888,18 @@ electron_1.app.whenReady().then(async () => {
     electron_1.app.dock?.setIcon(ICON);
     (0, history_1.loadHistory)();
     (0, store_1.loadStore)();
+    applyAppearance();
+    electron_1.nativeTheme.on('updated', () => {
+        if (IS_MAC)
+            for (const w of windows)
+                w.win.setVibrancy(glass());
+    });
     // Network settings go in before the first page loads.
     (0, network_1.applyDns)(store_1.store.network());
     await (0, network_1.applyProxy)(store_1.store.network(), [WEB_PARTITION]);
     registerIpc();
     buildMenu();
-    createWindow();
+    reopenWindow();
     setInterval(() => {
         for (const w of windows)
             for (const tab of w.tabs)
@@ -799,7 +907,7 @@ electron_1.app.whenReady().then(async () => {
     }, 60 * 1000);
     electron_1.app.on('activate', () => {
         if (electron_1.BrowserWindow.getAllWindows().length === 0)
-            createWindow();
+            reopenWindow();
     });
 });
 electron_1.app.on('window-all-closed', () => {
@@ -807,7 +915,7 @@ electron_1.app.on('window-all-closed', () => {
         electron_1.app.quit();
 });
 // Electron rejects bad certificates. Accept one only for a host the user trusted on the warning page.
-electron_1.app.on('certificate-error', (event, webContents, url, _error, _certificate, callback) => {
+electron_1.app.on('certificate-error', (event, webContents, url, _error, certificate, callback) => {
     event.preventDefault();
-    callback((0, app_pages_1.isTrusted)(webContents.session, url));
+    callback((0, app_pages_1.isTrusted)(webContents.session, url, certificate.fingerprint));
 });

@@ -2,22 +2,52 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' https: http: data:; connect-src 'self'">
   <title>New Tab</title>
   <link rel="stylesheet" href="home.css">
 </head>
 <body>
-  <h1>Ambaser</h1>
-  <section>
-    <h2>Pinned</h2>
-    <div id="pinned" class="grid"></div>
-    <p id="pinned-empty" class="empty" hidden>No pinned sites yet. Use the star button in the toolbar to pin one.</p>
-  </section>
-  <section>
-    <h2>Last opened</h2>
-    <div id="last-session" class="grid"></div>
-    <p id="last-session-empty" class="empty" hidden>Nothing from the last session.</p>
-  </section>
+  <main>
+    <header>
+      <div>
+        <h1 id="greeting">Ambaser</h1>
+        <p id="date"></p>
+      </div>
+      <time id="clock"></time>
+    </header>
+
+    <form id="search" role="search">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg>
+      <input id="query" type="text" spellcheck="false" autocomplete="off" aria-label="Search Google or enter a web address" placeholder="Search Google or enter a web address">
+    </form>
+
+    <p id="incognito-note" class="panel note" hidden>This is an incognito window. Pages you visit here are not added to history, and site data is discarded when you close it.</p>
+
+    <section>
+      <h2>Pinned</h2>
+      <div id="pinned" class="tiles"></div>
+      <p id="pinned-empty" class="panel note" hidden>No pinned sites yet. Open a site, then press the star button in the toolbar.</p>
+    </section>
+
+    <section id="activity" class="panel">
+      <h2>Recently visited</h2>
+      <ul id="recent" class="rows"></ul>
+      <p id="recent-empty" class="note" hidden>Pages you visit will show up here.</p>
+    </section>
+
+    <section class="panel">
+      <h2>Keyboard shortcuts</h2>
+      <dl class="shortcuts">
+        <div><dt>New tab</dt><dd><kbd data-keys="T"></kbd></dd></div>
+        <div><dt>Address bar</dt><dd><kbd data-keys="L"></kbd></dd></div>
+        <div><dt>Find in page</dt><dd><kbd data-keys="F"></kbd></dd></div>
+        <div><dt>Reopen closed tab</dt><dd><kbd data-keys="T" data-shift></kbd></dd></div>
+        <div><dt>Incognito window</dt><dd><kbd data-keys="N" data-shift></kbd></dd></div>
+        <div><dt>History</dt><dd><kbd data-keys="Y"></kbd></dd></div>
+      </dl>
+    </section>
+  </main>
   <script src="home.js"></script>
 </body>
 </html>

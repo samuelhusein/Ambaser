@@ -1,6 +1,9 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.guardPermissions = guardPermissions;
+exports.allowsNotifications = allowsNotifications;
+exports.sitePermissions = sitePermissions;
+exports.setSitePermission = setSitePermission;
 exports.resetPermissions = resetPermissions;
 // Asks the user before a site gets notifications, location, camera, microphone or the clipboard.
 const electron_1 = require("electron");
@@ -72,6 +75,34 @@ electron_1.ipcMain.on('permission:notifications', (event) => {
     const answer = event.sender.session.isPersistent() ? store_1.store.permission(key) : temporary.get(key);
     event.returnValue = !origin ? 'denied' : answer === undefined ? 'default' : answer ? 'granted' : 'denied';
 });
+// True if the user let this page send notifications.
+function allowsNotifications(ses, url) {
+    const key = `${(0, permissions_1.secureOrigin)(url)} notifications`;
+    return (ses.isPersistent() ? store_1.store.permission(key) : temporary.get(key)) === true;
+}
+// The saved answers for one site, as shown by the address bar's site button.
+function sitePermissions(ses, origin) {
+    return permissions_1.KINDS.map((kind) => {
+        const key = `${origin} ${kind}`;
+        const answer = ses.isPersistent() ? store_1.store.permission(key) : temporary.get(key);
+        return { kind, value: answer === undefined ? 'ask' : answer ? 'allow' : 'block' };
+    });
+}
+function setSitePermission(ses, origin, kind, value) {
+    if (!permissions_1.KINDS.includes(kind) || !['ask', 'allow', 'block'].includes(value))
+        return;
+    const key = `${origin} ${kind}`;
+    if (value === 'ask') {
+        if (ses.isPersistent())
+            store_1.store.removePermission(key);
+        else
+            temporary.delete(key);
+    }
+    else if (ses.isPersistent())
+        store_1.store.setPermission(key, value === 'allow');
+    else
+        temporary.set(key, value === 'allow');
+}
 function resetPermissions() {
     temporary.clear();
     store_1.store.clearPermissions();

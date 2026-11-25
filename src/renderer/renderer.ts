@@ -30,6 +30,14 @@ const el = {
   incognitoBadge: document.getElementById('incognito-badge') as HTMLSpanElement,
   reload: document.getElementById('reload') as HTMLButtonElement,
   address: document.getElementById('address') as HTMLInputElement,
+  siteButton: document.getElementById('site-btn') as HTMLButtonElement,
+  sitePanel: document.getElementById('site-panel') as HTMLDivElement,
+  siteHost: document.getElementById('site-host') as HTMLDivElement,
+  siteSecurity: document.getElementById('site-security') as HTMLParagraphElement,
+  siteForget: document.getElementById('site-forget') as HTMLButtonElement,
+  sitePermissions: document.getElementById('site-permissions') as HTMLDivElement,
+  siteNote: document.getElementById('site-note') as HTMLParagraphElement,
+  siteReload: document.getElementById('site-reload') as HTMLButtonElement,
   favorites: document.getElementById('favorites') as HTMLDivElement,
   dropdown: document.getElementById('dropdown') as HTMLDivElement,
   editor: document.getElementById('group-editor') as HTMLDivElement,
@@ -83,6 +91,8 @@ const ICONS = {
   expand: 'M7 17L17 7M9 7h8v8M15 17H7V9',
   star: 'M12 3l2.7 5.6l6.1.8l-4.5 4.2l1.1 6.1L12 16.8l-5.4 2.9l1.1-6.1l-4.5-4.2l6.1-.8z',
   briefcase: 'M4 8h16v11H4zM9 8V5h6v3M4 13h16',
+  lock: 'M6 11h12v9H6zM8.5 11V8a3.5 3.5 0 0 1 7 0v3',
+  unlock: 'M6 11h12v9H6zM8.5 11V8a3.5 3.5 0 0 1 6.8-1.2',
   book: 'M12 6c-2-1.5-5-1.5-8 0v13c3-1.5 6-1.5 8 0c2-1.5 5-1.5 8 0V6c-3-1.5-6-1.5-8 0zM12 6v13',
   code: 'M8 8l-4 4l4 4M16 8l4 4l-4 4',
   incognito: 'M3 12h18M6 12l2-7h8l2 7M7.5 20a2.5 2.5 0 1 0 0-5a2.5 2.5 0 1 0 0 5M16.5 20a2.5 2.5 0 1 0 0-5a2.5 2.5 0 1 0 0 5',
@@ -231,6 +241,10 @@ function overTab(tab: TabState, node: HTMLElement, event: DragEvent): TabDrop | 
   return { kind: x < 0.5 ? 'before' : 'after', tabId: tab.id };
 }
 
+function badge(count: number): HTMLSpanElement {
+  return span('unread', count > 99 ? '99+' : String(count));
+}
+
 function tabElement(tab: TabState, active: boolean): HTMLDivElement {
   const row = document.createElement('div');
   row.className = (active ? 'tab active' : 'tab') + (tab.sleeping ? ' sleeping' : '');
@@ -270,8 +284,10 @@ function tabElement(tab: TabState, active: boolean): HTMLDivElement {
 
   const title = document.createElement('span');
   title.className = 'tab-title';
-  title.textContent = tab.title || tab.url;
+  // The badge shows the count, so the title does not repeat it.
+  title.textContent = (tab.unread ? tab.title.replace(/^\(\d+\+?\)\s*/, '') : tab.title) || tab.url;
   row.append(title);
+  if (tab.unread) row.append(badge(tab.unread));
 
   row.append(removeButton('Close tab', () => api.closeTab(tab.id)));
   return row;
@@ -304,6 +320,11 @@ function tabStrip(state: BrowserState): HTMLElement[] {
     const group = state.groups.find((g) => g.id === tab.groupId);
     if (!group) return [tabElement(tab, active)];
     const parts: HTMLElement[] = chips.has(group.id) ? [] : [groupChip(group)];
+    // A collapsed group's chip carries the unread count of the tabs it hides.
+    if (group.collapsed && parts.length) {
+      const hidden = state.tabs.filter((t) => t.groupId === group.id && t.id !== state.activeId).reduce((sum, t) => sum + t.unread, 0);
+      if (hidden) parts[0].append(badge(hidden));
+    }
     // A collapsed group still shows the tab being viewed.
     if (!group.collapsed || active) {
       const row = tabElement(tab, active);
@@ -362,8 +383,10 @@ function favoriteButton(site: BrowserState['favorites'][number]): HTMLButtonElem
   const button = document.createElement('button');
   button.className = 'favorite';
   button.title = site.url;
-  button.append(site.favicon ? favicon(`fav${site.url}`, site.favicon, '') : icon('globe'));
-  button.append(span('', site.title || site.url));
+  // Without an icon of its own, a site shows its initial.
+  button.append(site.favicon ? favicon(`fav${site.url}`, site.favicon, '') : span('monogram', (site.title || new URL(site.url).hostname).charAt(0).toUpperCase()));
+  button.append(span('favorite-title', site.title || site.url));
+  if (site.unread) button.append(badge(site.unread));
   button.addEventListener('click', () => {
     closePanel();
     api.navigate(site.url);
@@ -371,7 +394,25 @@ function favoriteButton(site: BrowserState['favorites'][number]): HTMLButtonElem
   return button;
 }
 
+let appearance: import('../shared/types').Appearance = { mode: 'dark', theme: 'default' };
+
+function drawAppearance(): void {
+  document.documentElement.dataset.theme = appearance.theme;
+  for (const b of document.querySelectorAll<HTMLButtonElement>('[data-mode]')) b.setAttribute('aria-pressed', String(b.dataset.mode === appearance.mode));
+  for (const b of document.querySelectorAll<HTMLButtonElement>('[data-theme-choice]')) b.setAttribute('aria-pressed', String(b.dataset.themeChoice === appearance.theme));
+}
+
+// Appearance applies as soon as it is picked; no Save needed.
+for (const b of document.querySelectorAll<HTMLButtonElement>('[data-mode]')) {
+  b.addEventListener('click', () => api.setAppearance({ ...appearance, mode: b.dataset.mode as typeof appearance.mode }));
+}
+for (const b of document.querySelectorAll<HTMLButtonElement>('[data-theme-choice]')) {
+  b.addEventListener('click', () => api.setAppearance({ ...appearance, theme: b.dataset.themeChoice as typeof appearance.theme }));
+}
+
 function render(state: BrowserState): void {
+  appearance = state.appearance;
+  drawAppearance();
   groups = state.groups;
   if (activeId !== state.activeId) closeFind(); // the search belongs to the tab being left
   activeId = state.activeId;
@@ -385,6 +426,15 @@ function render(state: BrowserState): void {
   el.favorites.replaceChildren(
     ...(state.favorites.length ? state.favorites.map(favoriteButton) : [span('favorites-empty', 'Pin pages with the star to keep them here')]),
   );
+
+  const current = state.tabs.find((t) => t.id === state.activeId)?.url ?? '';
+  const web = /^https?:/.test(current);
+  const insecure = current.startsWith('http:');
+  el.siteButton.hidden = !web;
+  el.siteButton.classList.toggle('insecure', insecure);
+  el.siteButton.replaceChildren(icon(insecure ? 'unlock' : 'lock'));
+  if (siteUrl !== null && siteUrl !== `${state.activeId} ${current}`) closeSite(); // it described another page
+  shownUrl = `${state.activeId} ${current}`;
 
   for (const [id, image] of faviconCache) if (!image.isConnected) faviconCache.delete(id); // closed tabs, old icons
 
@@ -412,6 +462,94 @@ onToolbar(el.home, () => api.home());
 onToolbar(el.pin, () => api.togglePin());
 onToolbar(document.getElementById('incognito-btn') as HTMLButtonElement, () => api.newIncognito());
 onToolbar(document.getElementById('devtools-btn') as HTMLButtonElement, () => api.toggleDevTools());
+// ---- Site settings: what the site in the active tab may do ----
+const PERMISSION_LABELS: Record<string, string> = {
+  notifications: 'Notifications',
+  geolocation: 'Location',
+  camera: 'Camera',
+  microphone: 'Microphone',
+  'clipboard-read': 'Read clipboard',
+};
+const CHOICES = [['ask', 'Ask'], ['allow', 'Allow'], ['block', 'Block']] as const;
+let shownUrl = ''; // "tab url" of the active tab
+let siteUrl: string | null = null; // the one the open panel describes
+
+function closeSite(): void {
+  siteUrl = null;
+  if (el.sitePanel.hidden) return;
+  el.sitePanel.hidden = true;
+  resizeChrome();
+}
+
+function permissionRow(origin: string, kind: string, value: string): HTMLDivElement {
+  const row = document.createElement('div');
+  row.className = 'permission';
+  const segments = document.createElement('div');
+  segments.className = 'segments';
+  segments.setAttribute('role', 'group');
+  segments.setAttribute('aria-label', PERMISSION_LABELS[kind] ?? kind);
+  for (const [choice, label] of CHOICES) {
+    const button = document.createElement('button');
+    button.textContent = label;
+    button.setAttribute('aria-pressed', String(choice === value));
+    button.addEventListener('click', async () => {
+      await api.setSitePermission(origin, kind, choice);
+      for (const other of segments.children) other.setAttribute('aria-pressed', String(other === button));
+      el.siteNote.textContent = 'Reload the page to apply the change.';
+      el.siteReload.hidden = false;
+      resizeChrome();
+    });
+    segments.append(button);
+  }
+  row.append(span('', PERMISSION_LABELS[kind] ?? kind), segments);
+  return row;
+}
+
+async function openSite(): Promise<void> {
+  const url = shownUrl;
+  const site = await api.siteInfo();
+  if (!site || url !== shownUrl) return;
+  closePanel();
+  closeEditor();
+  closeDropdown();
+  hidePreview();
+  siteUrl = url;
+  el.siteHost.textContent = site.host;
+  el.siteSecurity.textContent = !site.secure
+    ? 'Not secure. Others on the network can read what you send to this site.'
+    : site.acceptedCertificate
+      ? 'You chose to continue past a certificate warning for this site.'
+      : 'The connection is encrypted.';
+  el.siteForget.hidden = !site.acceptedCertificate;
+  el.siteForget.onclick = async () => {
+    await api.forgetCertificate(site.origin);
+    el.siteForget.hidden = true;
+    el.siteNote.textContent = 'Restart the app to see the warning again.';
+    resizeChrome();
+  };
+  el.sitePermissions.replaceChildren(...(site.permissions ?? []).map((p) => permissionRow(site.origin, p.kind, p.value)));
+  el.siteNote.textContent = site.permissions ? '' : 'Only secure (HTTPS) sites can be given permissions.';
+  el.siteReload.hidden = true;
+  el.sitePanel.hidden = false;
+  const left = el.siteButton.getBoundingClientRect().left - 4;
+  el.sitePanel.style.left = `${Math.max(8, Math.min(left, window.innerWidth - 328))}px`;
+  resizeChrome();
+}
+
+el.siteButton.addEventListener('click', () => (el.sitePanel.hidden ? void openSite() : closeSite()));
+el.siteReload.addEventListener('click', () => {
+  closeSite();
+  api.reload();
+});
+document.addEventListener('mousedown', (event) => {
+  const target = event.target as Node;
+  if (!el.sitePanel.contains(target) && !el.siteButton.contains(target)) closeSite();
+});
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape') closeSite();
+});
+window.addEventListener('blur', closeSite);
+
 let items: Suggestion[] = [];
 let selected = -1;
 let typed = '';
@@ -462,9 +600,10 @@ function resizeChrome(): void {
   // Extra pixels leave room for the shadow.
   const dropdown = items.length ? Math.ceil(el.dropdown.getBoundingClientRect().bottom) + 16 : 0;
   const editor = el.editor.hidden ? 0 : Math.ceil(el.editor.getBoundingClientRect().bottom) + 16;
+  const site = el.sitePanel.hidden ? 0 : Math.ceil(el.sitePanel.getBoundingClientRect().bottom) + 16;
   const preview = el.preview.hidden ? 0 : Math.ceil(el.preview.getBoundingClientRect().bottom) + 16;
   const find = el.find.hidden ? 0 : Math.ceil(el.find.getBoundingClientRect().bottom) + 16;
-  api.setDropdownHeight(panelOpen() ? 100000 : Math.max(dropdown, editor, preview, find));
+  api.setDropdownHeight(panelOpen() ? 100000 : Math.max(dropdown, editor, preview, find, site));
 }
 
 function drawDropdown(): void {
@@ -601,6 +740,7 @@ const panelOpen = (): boolean => !el.panel.hidden || !el.settings.hidden;
 
 // Closes whichever full-window panel is open: history or settings.
 function closePanel(): void {
+  closeSite();
   if (!panelOpen()) return;
   el.panel.hidden = true;
   el.settings.hidden = true;
@@ -693,8 +833,8 @@ el.settingsForm.addEventListener('change', () => {
 });
 for (const button of el.settingsForm.querySelectorAll<HTMLButtonElement>('[data-clear]')) {
   button.addEventListener('click', async () => {
-    await api.clearData(button.dataset.clear as string);
-    showStatus(`Cleared: ${button.textContent}`);
+    const cleared = await api.clearData(button.dataset.clear as string);
+    showStatus(cleared ? `Cleared: ${button.textContent}` : '');
   });
 }
 el.settingsForm.addEventListener('submit', async (event) => {

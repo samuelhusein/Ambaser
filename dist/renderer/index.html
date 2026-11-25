@@ -23,16 +23,27 @@
       <button id="forward" class="icon-btn" title="Forward" data-icon="forward"></button>
       <button id="reload" class="icon-btn" title="Reload" data-icon="reload"></button>
       <button id="home" class="icon-btn" title="Home" data-icon="home"></button>
-      <input id="address" type="text" spellcheck="false" autocomplete="off" placeholder="Search Google or enter a web address">
+      <div class="address-box">
+        <button id="site-btn" class="site-btn" title="Site settings" hidden></button>
+        <input id="address" type="text" spellcheck="false" autocomplete="off" placeholder="Search Google or enter a web address">
+      </div>
       <button id="pin" class="icon-btn" title="Pin this page" data-icon="star"></button>
       <button id="history-btn" class="icon-btn" title="History" data-icon="clock"></button>
-      <button id="incognito-btn" class="icon-btn" title="New incognito window (Ctrl+Shift+N)" data-icon="incognito"></button>
+      <button id="incognito-btn" class="icon-btn" title="New incognito window (⇧⌘N)" data-icon="incognito"></button>
       <button id="devtools-btn" class="icon-btn" title="Developer tools (F12)" data-icon="code"></button>
       <button id="settings-btn" class="icon-btn" title="Settings" data-icon="sliders"></button>
     </div>
     <div id="favorites" class="favorites"></div>
   </div>
   <div id="dropdown" class="dropdown" hidden></div>
+  <div id="site-panel" class="site-panel" hidden>
+    <div id="site-host" class="site-host"></div>
+    <p id="site-security" class="note"></p>
+    <button id="site-forget" class="text-btn">Warn me about this certificate again</button>
+    <div id="site-permissions"></div>
+    <p id="site-note" class="note" role="status"></p>
+    <button id="site-reload" class="text-btn" hidden>Reload page</button>
+  </div>
   <div id="find" class="find" hidden>
     <input id="find-text" class="field" type="text" spellcheck="false" autocomplete="off" placeholder="Find in page">
     <span id="find-count" class="find-count"></span>
@@ -70,6 +81,24 @@
       <div class="history-head">
         <h1>Settings</h1>
         <button id="settings-close" type="button" class="icon-btn" title="Close" data-icon="close"></button>
+      </div>
+      <div class="setting appearance">Mode
+        <div id="mode-choices" class="segments" role="group" aria-label="Mode">
+          <button type="button" data-mode="system">System</button>
+          <button type="button" data-mode="light">Light</button>
+          <button type="button" data-mode="dark">Dark</button>
+        </div>
+      </div>
+      <div class="setting">Theme
+        <div id="theme-choices" class="swatches" role="group" aria-label="Theme">
+          <button type="button" class="swatch" data-theme-choice="default" title="Graphite" aria-label="Graphite"></button>
+          <button type="button" class="swatch" data-theme-choice="midnight" title="Midnight" aria-label="Midnight"></button>
+          <button type="button" class="swatch" data-theme-choice="titanium" title="Titanium" aria-label="Titanium"></button>
+          <button type="button" class="swatch" data-theme-choice="aurora" title="Aurora" aria-label="Aurora"></button>
+          <button type="button" class="swatch" data-theme-choice="rose" title="Rose Gold" aria-label="Rose Gold"></button>
+          <button type="button" class="swatch" data-theme-choice="champagne" title="Champagne" aria-label="Champagne"></button>
+          <button type="button" class="swatch" data-theme-choice="emerald" title="Emerald" aria-label="Emerald"></button>
+        </div>
       </div>
       <label class="setting">Proxy
         <select id="proxy-mode" class="field">

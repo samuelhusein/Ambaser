@@ -37,6 +37,7 @@ exports.allHistory = void 0;
 exports.loadHistory = loadHistory;
 exports.recordVisit = recordVisit;
 exports.retitle = retitle;
+exports.setFavicon = setFavicon;
 exports.removeVisit = removeVisit;
 exports.clearHistory = clearHistory;
 // History kept in memory and mirrored to a JSON file in the app's userData folder.
@@ -77,6 +78,14 @@ function retitle(url, title) {
     if (!entry || entry.title === title)
         return;
     entry.title = title;
+    save();
+}
+// Icons arrive after the navigation too. Huge inline ones are skipped to keep the file small.
+function setFavicon(url, favicon) {
+    const entry = entries.find((e) => e.url === url);
+    if (!entry || entry.favicon === favicon || favicon.length > 8192)
+        return;
+    entry.favicon = favicon;
     save();
 }
 function removeVisit(url) {
