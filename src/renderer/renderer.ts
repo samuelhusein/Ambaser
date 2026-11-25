@@ -30,6 +30,8 @@ const el = {
   incognitoBadge: document.getElementById('incognito-badge') as HTMLSpanElement,
   reload: document.getElementById('reload') as HTMLButtonElement,
   address: document.getElementById('address') as HTMLInputElement,
+  overflow: document.getElementById('tab-overflow') as HTMLButtonElement,
+  favoritesList: document.getElementById('favorites-list') as HTMLDivElement,
   favorites: document.getElementById('favorites') as HTMLDivElement,
   dropdown: document.getElementById('dropdown') as HTMLDivElement,
   editor: document.getElementById('group-editor') as HTMLDivElement,
@@ -43,6 +45,8 @@ const el = {
   previewTitle: document.getElementById('preview-title') as HTMLDivElement,
   previewUrl: document.getElementById('preview-url') as HTMLDivElement,
   find: document.getElementById('find') as HTMLDivElement,
+  downloads: document.getElementById('downloads') as HTMLDivElement,
+  downloadsButton: document.getElementById('downloads-btn') as HTMLButtonElement,
   findText: document.getElementById('find-text') as HTMLInputElement,
   findCount: document.getElementById('find-count') as HTMLSpanElement,
   findPrev: document.getElementById('find-prev') as HTMLButtonElement,
@@ -79,6 +83,10 @@ const ICONS = {
   none: 'M6 18L18 6',
   minus: 'M5 12h14',
   sliders: 'M4 7h10M18 7h2M16 5v4M4 17h2M10 17h10M8 15v4',
+  muted: 'M4 9v6h4l5 4V5L8 9zM17 9l4 6M21 9l-4 6',
+  pause: 'M8 5v14M16 5v14',
+  folder: 'M3 7h6l2 2h10v10H3z',
+  download: 'M12 4v11M7 11l5 5 5-5M5 20h14',
   home: 'M4 11l8-7l8 7M6 10v10h12V10',
   expand: 'M7 17L17 7M9 7h8v8M15 17H7V9',
   star: 'M12 3l2.7 5.6l6.1.8l-4.5 4.2l1.1 6.1L12 16.8l-5.4 2.9l1.1-6.1l-4.5-4.2l6.1-.8z',
@@ -273,6 +281,11 @@ function tabElement(tab: TabState, active: boolean): HTMLDivElement {
   title.textContent = tab.title || tab.url;
   row.append(title);
 
+  if (tab.muted) {
+    const mute = icon('muted');
+    mute.classList.add('tab-muted');
+    row.append(mute);
+  }
   row.append(removeButton('Close tab', () => api.closeTab(tab.id)));
   return row;
 }
@@ -371,11 +384,55 @@ function favoriteButton(site: BrowserState['favorites'][number]): HTMLButtonElem
   return button;
 }
 
+let lastState: BrowserState | null = null;
+let hiddenIds: number[] = [];
+
+// Tabs that do not fit are left out of the strip and counted on the "+N" button. The active tab always stays.
+function splitTabs(state: BrowserState): { shown: TabState[]; hidden: TabState[] } {
+  const strip = el.tabs.parentElement as HTMLElement;
+  const others = [document.getElementById('window-buttons'), el.newTab, el.incognitoBadge];
+  const used = others.reduce((sum, node) => sum + (node && !node.hidden ? node.offsetWidth + 6 : 0), 0);
+  const max = Math.max(1, Math.floor((strip.clientWidth - 16 - used - 52) / 126)); // a tab is at least 120px wide, plus the gap
+  if (state.tabs.length <= max) return { shown: state.tabs, hidden: [] };
+  const shown = state.tabs.slice(0, max);
+  const active = state.tabs.find((t) => t.id === state.activeId);
+  if (active && !shown.includes(active)) shown[max - 1] = active;
+  return { shown, hidden: state.tabs.filter((t) => !shown.includes(t)) };
+}
+
+el.overflow.addEventListener('click', () => api.tabOverflow(hiddenIds));
+window.addEventListener('resize', () => lastState && render(lastState));
+
+let favorites: BrowserState['favorites'] = [];
+
+function drawFavoritesSettings(): void {
+  el.favoritesList.replaceChildren(
+    ...(favorites.length
+      ? favorites.map((site) => {
+          const row = document.createElement('div');
+          row.className = 'row';
+          const text = span('row-text', site.title || site.url);
+          text.append(span('row-url', site.url));
+          row.append(site.favicon ? favicon(`set${site.url}`, site.favicon, '') : icon('globe'), text, removeButton('Remove from favorites', () => api.unpin(site.url)));
+          return row;
+        })
+      : [span('history-empty', 'No favorites yet')]),
+  );
+}
+
 function render(state: BrowserState): void {
+  lastState = state;
+  favorites = state.favorites;
+  drawFavoritesSettings();
+  const { shown, hidden } = splitTabs(state);
+  hiddenIds = hidden.map((t) => t.id);
+  el.overflow.hidden = hidden.length === 0;
+  el.overflow.textContent = `+${hidden.length}`;
+  el.overflow.title = `${hidden.length} more tab${hidden.length === 1 ? '' : 's'}`;
   groups = state.groups;
   if (activeId !== state.activeId) closeFind(); // the search belongs to the tab being left
   activeId = state.activeId;
-  el.tabs.replaceChildren(...tabStrip(state));
+  el.tabs.replaceChildren(...tabStrip({ ...state, tabs: shown }));
   if (hoverId !== null && (hoverId === state.activeId || !state.tabs.some((t) => t.id === hoverId))) hidePreview();
   if (editing !== null && !groups.some((g) => g.id === editing)) closeEditor();
   el.back.disabled = !state.canGoBack;
@@ -464,7 +521,8 @@ function resizeChrome(): void {
   const editor = el.editor.hidden ? 0 : Math.ceil(el.editor.getBoundingClientRect().bottom) + 16;
   const preview = el.preview.hidden ? 0 : Math.ceil(el.preview.getBoundingClientRect().bottom) + 16;
   const find = el.find.hidden ? 0 : Math.ceil(el.find.getBoundingClientRect().bottom) + 16;
-  api.setDropdownHeight(panelOpen() ? 100000 : Math.max(dropdown, editor, preview, find));
+  const downloads = el.downloads.hidden ? 0 : Math.ceil(el.downloads.getBoundingClientRect().bottom) + 16;
+  api.setDropdownHeight(panelOpen() ? 100000 : Math.max(dropdown, editor, preview, find, downloads));
 }
 
 function drawDropdown(): void {
@@ -653,6 +711,105 @@ api.onFocusAddress(() => {
   el.address.focus();
   el.address.select();
 });
+type DownloadInfo = import('../shared/types').DownloadInfo;
+type DownloadAction = Parameters<BrowserApi['downloadAction']>[1];
+
+let downloads: DownloadInfo[] = [];
+
+const megabytes = (bytes: number): string => `${(bytes / 1048576).toFixed(1)} MB`;
+
+function downloadStatus(d: DownloadInfo): string {
+  const size = d.total ? `${megabytes(d.received)} / ${megabytes(d.total)}` : megabytes(d.received);
+  if (d.state === 'progressing') return size;
+  if (d.state === 'paused') return `Paused, ${size}`;
+  if (d.state === 'completed') return `Done, ${megabytes(d.received)}`;
+  return d.state === 'cancelled' ? 'Cancelled' : 'Failed';
+}
+
+function downloadButton(title: string, name: IconName, id: number, action: DownloadAction): HTMLButtonElement {
+  const button = document.createElement('button');
+  button.className = 'small-btn';
+  button.title = title;
+  button.append(icon(name));
+  button.addEventListener('click', (event) => {
+    event.stopPropagation();
+    api.downloadAction(id, action);
+  });
+  return button;
+}
+
+function downloadRow(d: DownloadInfo): HTMLDivElement {
+  const row = document.createElement('div');
+  row.className = 'row download';
+  const active = d.state === 'progressing' || d.state === 'paused';
+  if (d.state === 'completed') row.addEventListener('click', () => api.downloadAction(d.id, 'open'));
+
+  const text = span('row-text', d.name);
+  text.append(span('row-url', downloadStatus(d)));
+  const body = document.createElement('div');
+  body.className = 'download-body';
+  body.append(text);
+  if (active) {
+    const bar = document.createElement('div');
+    bar.className = d.total ? 'bar' : 'bar unknown';
+    const fill = document.createElement('div');
+    fill.style.width = d.total ? `${Math.min(100, (d.received / d.total) * 100)}%` : '100%';
+    bar.append(fill);
+    body.append(bar);
+  }
+  row.append(icon('download'), body);
+  if (d.state === 'progressing') row.append(downloadButton('Pause', 'pause', d.id, 'pause'));
+  if (d.state === 'paused') row.append(downloadButton('Resume', 'play', d.id, 'resume'));
+  if (d.state === 'completed') row.append(downloadButton('Show in folder', 'folder', d.id, 'show'));
+  row.append(downloadButton(active ? 'Cancel' : 'Remove from list', 'close', d.id, active ? 'cancel' : 'remove'));
+  return row;
+}
+
+function drawDownloads(): void {
+  el.downloadsButton.classList.toggle('busy', downloads.some((d) => d.state === 'progressing'));
+  if (el.downloads.hidden) return;
+  const clear = document.createElement('button');
+  clear.className = 'text-btn';
+  clear.textContent = 'Clear finished';
+  clear.disabled = !downloads.some((d) => d.state !== 'progressing' && d.state !== 'paused');
+  clear.addEventListener('click', () => api.downloadAction(0, 'clear'));
+  el.downloads.replaceChildren(...(downloads.length ? downloads.map(downloadRow) : [span('history-empty', 'No downloads yet')]), clear);
+  resizeChrome();
+}
+
+function closeDownloads(): void {
+  if (el.downloads.hidden) return;
+  el.downloads.hidden = true;
+  resizeChrome();
+}
+
+el.downloadsButton.addEventListener('click', () => {
+  if (!el.downloads.hidden) return closeDownloads();
+  closePanel();
+  closeEditor();
+  closeDropdown();
+  hidePreview();
+  el.downloads.hidden = false;
+  drawDownloads();
+});
+// Clicking elsewhere (but not on the button, which toggles) or pressing Escape closes the list.
+document.addEventListener('mousedown', (event) => {
+  const target = event.target as Node;
+  if (!el.downloads.contains(target) && !el.downloadsButton.contains(target)) closeDownloads();
+});
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape') closeDownloads();
+});
+window.addEventListener('blur', closeDownloads);
+api.onDownloads((list) => {
+  downloads = list;
+  drawDownloads();
+});
+void api.listDownloads().then((list) => {
+  downloads = list;
+  drawDownloads();
+});
+
 type NetworkSettings = import('../shared/types').NetworkSettings;
 
 // Fields that do not apply to the chosen mode are greyed out.
@@ -679,7 +836,7 @@ async function openSettings(): Promise<void> {
   el.dnsMode.value = saved.dnsMode;
   el.dnsUrl.value = saved.dnsUrl;
   enableFields();
-  showStatus('');
+  showSection('network');
   el.settings.hidden = false;
   resizeChrome();
   el.proxyMode.focus();
@@ -691,6 +848,15 @@ el.settingsForm.addEventListener('change', () => {
   enableFields();
   showStatus('');
 });
+document.getElementById('open-history')?.addEventListener('click', openPanel);
+
+function showSection(name: string): void {
+  for (const nav of document.querySelectorAll<HTMLButtonElement>('.nav-btn')) nav.classList.toggle('active', nav.dataset.section === name);
+  for (const section of el.settingsForm.querySelectorAll<HTMLElement>('.section')) section.hidden = section.dataset.section !== name;
+  (document.getElementById('settings-save') as HTMLButtonElement).hidden = name !== 'network'; // only the network fields are saved
+  showStatus('');
+}
+for (const nav of document.querySelectorAll<HTMLButtonElement>('.nav-btn')) nav.addEventListener('click', () => showSection(nav.dataset.section as string));
 for (const button of el.settingsForm.querySelectorAll<HTMLButtonElement>('[data-clear]')) {
   button.addEventListener('click', async () => {
     await api.clearData(button.dataset.clear as string);

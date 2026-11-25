@@ -10,6 +10,13 @@ const api = {
     dropTab: (id, drop) => electron_1.ipcRenderer.send('tab:drop', id, drop),
     previewTab: (id) => electron_1.ipcRenderer.invoke('tab:preview', String(id)),
     home: () => electron_1.ipcRenderer.send('nav:home'),
+    listDownloads: () => electron_1.ipcRenderer.invoke('downloads:list', ''),
+    onDownloads: (callback) => {
+        electron_1.ipcRenderer.on('downloads:update', (_event, list) => callback(list));
+    },
+    downloadAction: (id, action) => electron_1.ipcRenderer.send('downloads:action', id, action),
+    unpin: (url) => electron_1.ipcRenderer.send('pin:remove', url),
+    tabOverflow: (ids) => electron_1.ipcRenderer.send('tabs:overflow', ids),
     newIncognito: () => electron_1.ipcRenderer.send('window:incognito'),
     toggleDevTools: () => electron_1.ipcRenderer.send('page:devtools'),
     togglePin: () => electron_1.ipcRenderer.send('pin:toggle'),

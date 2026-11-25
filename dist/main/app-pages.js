@@ -44,7 +44,8 @@ const path = __importStar(require("path"));
 const url_1 = require("../shared/url");
 const store_1 = require("./store");
 const CONTENT_TYPES = { html: 'text/html', css: 'text/css', js: 'text/javascript' };
-// Hosts the user chose to trust despite a bad certificate: per session, in memory only.
+// Hosts the user chose to trust despite a bad certificate. Remembered on disk for the normal profile;
+// incognito sessions keep them in memory only.
 const trustedHosts = new Map();
 // Must run before app is ready.
 function registerScheme() {
@@ -52,7 +53,8 @@ function registerScheme() {
 }
 function isTrusted(ses, url) {
     try {
-        return trustedHosts.get(ses)?.has(new URL(url).host) ?? false;
+        const host = new URL(url).host;
+        return (trustedHosts.get(ses)?.has(host) ?? false) || (ses.isPersistent() && store_1.store.isTrustedHost(host));
     }
     catch {
         return false;
@@ -96,7 +98,10 @@ function runPageAction(wc, target) {
     }
     if (action.href.startsWith(`mybrowser://${url_1.CERT_ERROR_HOST}/trust`) && from.startsWith(`mybrowser://${url_1.CERT_ERROR_HOST}/`)) {
         if (/^https:/i.test(url) && URL.canParse(url)) {
-            trustedHosts.get(wc.session)?.add(new URL(url).host);
+            const host = new URL(url).host;
+            trustedHosts.get(wc.session)?.add(host);
+            if (wc.session.isPersistent())
+                store_1.store.trustHost(host);
             wc.loadURL(url).catch((err) => console.error(`loadURL ${url}: ${err.message}`));
         }
         return true;

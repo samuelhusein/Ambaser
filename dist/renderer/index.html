@@ -15,6 +15,7 @@
         <button class="light light-fullscreen" data-window="fullscreen" data-icon="expand" title="Full screen"></button>
       </div>
       <div id="tabs" class="tabs"></div>
+      <button id="tab-overflow" class="overflow-btn" title="More tabs" hidden></button>
       <button id="new-tab" class="icon-btn" title="New tab" data-icon="plus"></button>
       <span id="incognito-badge" class="badge" hidden>Incognito</span>
     </div>
@@ -28,11 +29,13 @@
       <button id="history-btn" class="icon-btn" title="History" data-icon="clock"></button>
       <button id="incognito-btn" class="icon-btn" title="New incognito window (Ctrl+Shift+N)" data-icon="incognito"></button>
       <button id="devtools-btn" class="icon-btn" title="Developer tools (F12)" data-icon="code"></button>
+      <button id="downloads-btn" class="icon-btn" title="Downloads" data-icon="download"></button>
       <button id="settings-btn" class="icon-btn" title="Settings" data-icon="sliders"></button>
     </div>
     <div id="favorites" class="favorites"></div>
   </div>
   <div id="dropdown" class="dropdown" hidden></div>
+  <div id="downloads" class="downloads" hidden></div>
   <div id="find" class="find" hidden>
     <input id="find-text" class="field" type="text" spellcheck="false" autocomplete="off" placeholder="Find in page">
     <span id="find-count" class="find-count"></span>
@@ -66,48 +69,66 @@
     </div>
   </div>
   <div id="settings-panel" class="history-panel" hidden>
-    <form id="settings-form" class="history-body">
-      <div class="history-head">
-        <h1>Settings</h1>
-        <button id="settings-close" type="button" class="icon-btn" title="Close" data-icon="close"></button>
-      </div>
-      <label class="setting">Proxy
-        <select id="proxy-mode" class="field">
-          <option value="system">Use the system setting</option>
-          <option value="direct">No proxy</option>
-          <option value="manual">Manual</option>
-        </select>
-      </label>
-      <label class="setting">Proxy server
-        <input id="proxy-server" class="field" type="text" spellcheck="false" autocomplete="off" placeholder="127.0.0.1:8080 or socks5://host:1080">
-      </label>
-      <label class="setting">Skip the proxy for
-        <input id="proxy-bypass" class="field" type="text" spellcheck="false" autocomplete="off" placeholder="*.local, 10.0.0.0/8">
-      </label>
-      <label class="setting">DNS
-        <select id="dns-mode" class="field">
-          <option value="cloudflare">Cloudflare 1.1.1.1</option>
-          <option value="system">Use the system DNS</option>
-          <option value="custom">Custom (DNS over HTTPS)</option>
-        </select>
-      </label>
-      <label class="setting">DNS server
-        <input id="dns-url" class="field" type="text" spellcheck="false" autocomplete="off" placeholder="https://dns.google/dns-query">
-      </label>
-      <p class="note">These apply to this app only. If a secure DNS server cannot be reached, the system DNS is used. With a proxy, the proxy usually looks names up itself. Proxies that ask for a password are not supported.</p>
-      <div class="setting">Clear browsing data
-        <div class="clear-actions">
-          <button type="button" class="text-btn" data-clear="cache">Cache</button>
-          <button type="button" class="text-btn" data-clear="cookies">Cookies and site data</button>
-          <button type="button" class="text-btn" data-clear="history">History</button>
-          <button type="button" class="text-btn danger" data-clear="all">Everything</button>
+    <div class="settings-layout">
+      <nav class="settings-nav">
+        <button type="button" class="nav-btn active" data-section="network">Network</button>
+        <button type="button" class="nav-btn" data-section="favorites">Favorites</button>
+        <button type="button" class="nav-btn" data-section="privacy">Privacy</button>
+      </nav>
+      <form id="settings-form" class="history-body">
+        <div class="history-head">
+          <h1>Settings</h1>
+          <button id="settings-close" type="button" class="icon-btn" title="Close" data-icon="close"></button>
         </div>
-      </div>
-      <div class="history-head">
-        <span id="settings-status" class="note" role="status"></span>
-        <button type="submit" class="text-btn">Save</button>
-      </div>
-    </form>
+        <section class="section" data-section="network">
+          <label class="setting">Proxy
+            <select id="proxy-mode" class="field">
+              <option value="system">Use the system setting</option>
+              <option value="direct">No proxy</option>
+              <option value="manual">Manual</option>
+            </select>
+          </label>
+          <label class="setting">Proxy server
+            <input id="proxy-server" class="field" type="text" spellcheck="false" autocomplete="off" placeholder="127.0.0.1:8080 or socks5://host:1080">
+          </label>
+          <label class="setting">Skip the proxy for
+            <input id="proxy-bypass" class="field" type="text" spellcheck="false" autocomplete="off" placeholder="*.local, 10.0.0.0/8">
+          </label>
+          <label class="setting">DNS
+            <select id="dns-mode" class="field">
+              <option value="cloudflare">Cloudflare 1.1.1.1</option>
+              <option value="system">Use the system DNS</option>
+              <option value="custom">Custom (DNS over HTTPS)</option>
+            </select>
+          </label>
+          <label class="setting">DNS server
+            <input id="dns-url" class="field" type="text" spellcheck="false" autocomplete="off" placeholder="https://dns.google/dns-query">
+          </label>
+          <p class="note">These apply to this app only. If a secure DNS server cannot be reached, the system DNS is used. With a proxy, the proxy usually looks names up itself. Proxies that ask for a password are not supported.</p>
+        </section>
+        <section class="section" data-section="favorites" hidden>
+          <p class="note">Pages pinned with the star appear in the bar under the address bar.</p>
+          <div id="favorites-list"></div>
+        </section>
+        <section class="section" data-section="privacy" hidden>
+          <div class="setting">Browsing history
+            <div class="clear-actions"><button type="button" id="open-history" class="text-btn">View history</button></div>
+          </div>
+          <div class="setting">Clear browsing data
+            <div class="clear-actions">
+              <button type="button" class="text-btn" data-clear="cache">Cache</button>
+              <button type="button" class="text-btn" data-clear="cookies">Cookies and site data</button>
+              <button type="button" class="text-btn" data-clear="history">History</button>
+              <button type="button" class="text-btn danger" data-clear="all">Everything</button>
+            </div>
+          </div>
+        </section>
+        <div class="history-head">
+          <span id="settings-status" class="note" role="status"></span>
+          <button id="settings-save" type="submit" class="text-btn">Save</button>
+        </div>
+      </form>
+    </div>
   </div>
   <script src="renderer.js"></script>
 </body>

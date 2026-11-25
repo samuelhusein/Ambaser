@@ -41,7 +41,7 @@ const electron_1 = require("electron");
 const fs = __importStar(require("fs"));
 const path = __importStar(require("path"));
 const network_1 = require("../shared/network");
-let data = { pinned: [], lastSession: [], network: network_1.DEFAULT_NETWORK, permissions: {} };
+let data = { pinned: [], lastSession: [], network: network_1.DEFAULT_NETWORK, permissions: {}, trustedHosts: [] };
 const file = () => path.join(electron_1.app.getPath('userData'), 'browser-data.json');
 const sites = (list) => Array.isArray(list) ? list.filter((e) => typeof e?.url === 'string' && typeof e?.title === 'string') : [];
 const answers = (input) => typeof input === 'object' && input !== null ? Object.fromEntries(Object.entries(input).filter(([, v]) => typeof v === 'boolean')) : {};
@@ -49,7 +49,7 @@ function loadStore() {
     try {
         const parsed = JSON.parse(fs.readFileSync(file(), 'utf8'));
         const network = (0, network_1.parseNetwork)(parsed?.network);
-        data = { pinned: sites(parsed?.pinned), lastSession: sites(parsed?.lastSession), network: typeof network === 'string' ? network_1.DEFAULT_NETWORK : network, permissions: answers(parsed?.permissions) };
+        data = { pinned: sites(parsed?.pinned), lastSession: sites(parsed?.lastSession), network: typeof network === 'string' ? network_1.DEFAULT_NETWORK : network, permissions: answers(parsed?.permissions), trustedHosts: Array.isArray(parsed?.trustedHosts) ? parsed.trustedHosts.filter((h) => typeof h === 'string') : [] };
     }
     catch (err) {
         if (err.code !== 'ENOENT')
@@ -72,6 +72,16 @@ exports.store = {
     },
     clearPermissions() {
         data.permissions = {};
+        save();
+    },
+    isTrustedHost: (host) => data.trustedHosts.includes(host),
+    trustHost(host) {
+        if (!data.trustedHosts.includes(host))
+            data.trustedHosts.push(host);
+        save();
+    },
+    clearTrustedHosts() {
+        data.trustedHosts = [];
         save();
     },
     network: () => data.network,

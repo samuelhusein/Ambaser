@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, Menu, net, session, shell, WebContentsView, IpcMainEvent, IpcMainInvokeEvent, WebContents } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, Menu, net, session, shell, WebContentsView, IpcMainEvent, IpcMainInvokeEvent, WebContents } from 'electron';
 import * as path from 'path';
 import { BLANK_URL, HOME_URL, certErrorUrl, displayUrl, isAllowedUrl, isAppUrl, loadErrorUrl, normalizeInput } from '../shared/url';
 import { isTrusted, registerPages, registerScheme, runPageAction } from './app-pages';
@@ -9,6 +9,7 @@ import { isExternal, openExternal, showContextMenu, watchDownloads } from './web
 import { parseNetwork } from '../shared/network';
 import { parseSuggestions, searchHistory, suggestQuery } from '../shared/suggest';
 import { GROUP_COLORS, moveToGroup, patchGroup, placeTab } from '../shared/groups';
+import { downloadAction, downloadList, onDownloadsChange } from './downloads';
 import { allHistory, clearHistory, loadHistory, recordVisit, removeVisit, retitle } from './history';
 import type { BrowserState, GroupState, TabDrop } from '../shared/types';
 
@@ -96,7 +97,7 @@ function snapshot({ tabs, groups, activeTab }: Win): BrowserState {
   return {
     isActivePinned: activeTab ? store.isPinned(activeTab.url) : false,
     favorites: store.pinned(),
-    tabs: tabs.map((t) => ({ id: t.id, groupId: t.groupId, title: t.title, url: displayUrl(t.url), favicon: t.favicon, loading: t.loading, sleeping: t.sleeping })),
+    tabs: tabs.map((t) => ({ id: t.id, groupId: t.groupId, title: t.title, url: displayUrl(t.url), favicon: t.favicon, loading: t.loading, sleeping: t.sleeping, muted: t.view.webContents.isAudioMuted() })),
     groups,
     activeId: activeTab ? activeTab.id : null,
     canGoBack: activeTab ? activeTab.view.webContents.navigationHistory.canGoBack() : false,
@@ -232,7 +233,10 @@ function showTabMenu(w: Win, tab: Tab): void {
     },
     { label: 'Remove from group', visible: tab.groupId !== null, click: () => setGroup(w, tab, null) },
     { type: 'separator' },
-    { label: wc.isAudioMuted() ? 'Unmute tab' : 'Mute tab', click: () => wc.setAudioMuted(!wc.isAudioMuted()) },
+    { label: wc.isAudioMuted() ? 'Unmute tab' : 'Mute tab', click: () => {
+      wc.setAudioMuted(!wc.isAudioMuted());
+      broadcast(w);
+    } },
     { type: 'separator' },
     { label: 'Close tab', click: () => closeTab(w, tab.id) },
     { label: 'Close other tabs', enabled: w.tabs.length > 1, click: () => closeMany(w, w.tabs.filter((t) => t !== tab)) },
@@ -262,8 +266,18 @@ function closeTab(w: Win, id: number): void {
   broadcast(w);
 }
 
+const MAX_TABS = 50;
+const warning = new WeakSet<Win>(); // one message at a time, even when many tabs are refused at once
+
 function createTab(w: Win, url: string, groupId: number | null = null): void {
   const { tabs } = w;
+  if (tabs.length >= MAX_TABS) {
+    if (!warning.has(w)) {
+      warning.add(w);
+      void dialog.showMessageBox(w.win, { type: 'info', message: `Tab limit reached (${MAX_TABS})`, detail: 'Close a tab to open another.' }).then(() => warning.delete(w));
+    }
+    return;
+  }
   const view = new WebContentsView({ webPreferences: { ...webPreferences, partition: w.partition, preload: PAGE_PRELOAD } });
   const tab: Tab = { id: nextId++, groupId: null, view, title: 'New Tab', url: BLANK_URL, favicon: null, loading: false, preview: null, sleeping: false, lastActive: Date.now() };
   tabs.push(tab);
@@ -460,6 +474,17 @@ function registerIpc(): void {
     const target = typeof url === 'string' ? normalizeInput(url) : null;
     createTab(w, target ?? HOME_URL);
   });
+  onCommand('pin:remove', (_w, url) => {
+    if (typeof url !== 'string') return;
+    store.unpin(url);
+    for (const win of windows) broadcast(win);
+  });
+  onCommand('tabs:overflow', (w, ids) => {
+    if (!Array.isArray(ids)) return;
+    const hidden = w.tabs.filter((t) => ids.includes(t.id));
+    const shorten = (text: string): string => (text.length > 50 ? `${text.slice(0, 49)}…` : text);
+    Menu.buildFromTemplate(hidden.map((t) => ({ label: shorten(t.title || t.url), click: () => activate(w, t) }))).popup({ window: w.win });
+  });
   onCommand('window:incognito', () => createWindow(true));
   onCommand('page:devtools', ({ activeTab }) => activeTab?.view.webContents.toggleDevTools());
   onCommand('tab:close', (w, id) => closeTab(w, Number(id)));
@@ -523,6 +548,13 @@ function registerIpc(): void {
   });
   onQuery('history:search', (_w, query) => searchHistory(allHistory(), query));
   onQuery('history:remove', (_w, url) => removeVisit(url));
+  onQuery('downloads:list', () => downloadList());
+  onCommand('downloads:action', (_w, id, action) => {
+    if (typeof id === 'number' && typeof action === 'string') downloadAction(id, action);
+  });
+  onDownloadsChange(() => {
+    for (const w of windows) if (!w.chrome.webContents.isDestroyed()) w.chrome.webContents.send('downloads:update', downloadList());
+  });
   onQuery('history:list', (_w, query) => searchHistory(allHistory(), query, Infinity));
   onQuery('history:clear', () => clearHistory());
   onQuery('tab:preview', (w, id) => previewTab(w, Number(id)));
@@ -569,6 +601,7 @@ function createWindow(incognito = false): Win {
     height: 800,
     title: incognito ? `${APP_NAME} (Incognito)` : APP_NAME,
     icon: ICON, // Windows and Linux; macOS uses the Dock icon set at startup
+    autoHideMenuBar: true, // Windows/Linux: hidden until Alt is pressed; shortcuts keep working
     show: false, // shown once the chrome UI has painted, so there is no blank flash
     backgroundColor: '#1f2125',
     // macOS glass: the system blurs what is behind the window; the chrome draws its own window buttons.

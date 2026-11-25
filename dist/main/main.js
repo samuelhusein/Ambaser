@@ -44,6 +44,7 @@ const web_features_1 = require("./web-features");
 const network_2 = require("../shared/network");
 const suggest_1 = require("../shared/suggest");
 const groups_1 = require("../shared/groups");
+const downloads_1 = require("./downloads");
 const history_1 = require("./history");
 const CHROME_HEIGHT = 112; // tab strip 40 + toolbar 44 + favorites bar 28
 const WEB_PARTITION = 'persist:browser';
@@ -94,7 +95,7 @@ function snapshot({ tabs, groups, activeTab }) {
     return {
         isActivePinned: activeTab ? store_1.store.isPinned(activeTab.url) : false,
         favorites: store_1.store.pinned(),
-        tabs: tabs.map((t) => ({ id: t.id, groupId: t.groupId, title: t.title, url: (0, url_1.displayUrl)(t.url), favicon: t.favicon, loading: t.loading, sleeping: t.sleeping })),
+        tabs: tabs.map((t) => ({ id: t.id, groupId: t.groupId, title: t.title, url: (0, url_1.displayUrl)(t.url), favicon: t.favicon, loading: t.loading, sleeping: t.sleeping, muted: t.view.webContents.isAudioMuted() })),
         groups,
         activeId: activeTab ? activeTab.id : null,
         canGoBack: activeTab ? activeTab.view.webContents.navigationHistory.canGoBack() : false,
@@ -238,7 +239,10 @@ function showTabMenu(w, tab) {
         },
         { label: 'Remove from group', visible: tab.groupId !== null, click: () => setGroup(w, tab, null) },
         { type: 'separator' },
-        { label: wc.isAudioMuted() ? 'Unmute tab' : 'Mute tab', click: () => wc.setAudioMuted(!wc.isAudioMuted()) },
+        { label: wc.isAudioMuted() ? 'Unmute tab' : 'Mute tab', click: () => {
+                wc.setAudioMuted(!wc.isAudioMuted());
+                broadcast(w);
+            } },
         { type: 'separator' },
         { label: 'Close tab', click: () => closeTab(w, tab.id) },
         { label: 'Close other tabs', enabled: w.tabs.length > 1, click: () => closeMany(w, w.tabs.filter((t) => t !== tab)) },
@@ -269,8 +273,17 @@ function closeTab(w, id) {
         activate(w, tabs[Math.min(index, tabs.length - 1)]);
     broadcast(w);
 }
+const MAX_TABS = 50;
+const warning = new WeakSet(); // one message at a time, even when many tabs are refused at once
 function createTab(w, url, groupId = null) {
     const { tabs } = w;
+    if (tabs.length >= MAX_TABS) {
+        if (!warning.has(w)) {
+            warning.add(w);
+            void electron_1.dialog.showMessageBox(w.win, { type: 'info', message: `Tab limit reached (${MAX_TABS})`, detail: 'Close a tab to open another.' }).then(() => warning.delete(w));
+        }
+        return;
+    }
     const view = new electron_1.WebContentsView({ webPreferences: { ...webPreferences, partition: w.partition, preload: PAGE_PRELOAD } });
     const tab = { id: nextId++, groupId: null, view, title: 'New Tab', url: url_1.BLANK_URL, favicon: null, loading: false, preview: null, sleeping: false, lastActive: Date.now() };
     tabs.push(tab);
@@ -482,6 +495,20 @@ function registerIpc() {
         const target = typeof url === 'string' ? (0, url_1.normalizeInput)(url) : null;
         createTab(w, target ?? url_1.HOME_URL);
     });
+    onCommand('pin:remove', (_w, url) => {
+        if (typeof url !== 'string')
+            return;
+        store_1.store.unpin(url);
+        for (const win of windows)
+            broadcast(win);
+    });
+    onCommand('tabs:overflow', (w, ids) => {
+        if (!Array.isArray(ids))
+            return;
+        const hidden = w.tabs.filter((t) => ids.includes(t.id));
+        const shorten = (text) => (text.length > 50 ? `${text.slice(0, 49)}…` : text);
+        electron_1.Menu.buildFromTemplate(hidden.map((t) => ({ label: shorten(t.title || t.url), click: () => activate(w, t) }))).popup({ window: w.win });
+    });
     onCommand('window:incognito', () => createWindow(true));
     onCommand('page:devtools', ({ activeTab }) => activeTab?.view.webContents.toggleDevTools());
     onCommand('tab:close', (w, id) => closeTab(w, Number(id)));
@@ -561,6 +588,16 @@ function registerIpc() {
     });
     onQuery('history:search', (_w, query) => (0, suggest_1.searchHistory)((0, history_1.allHistory)(), query));
     onQuery('history:remove', (_w, url) => (0, history_1.removeVisit)(url));
+    onQuery('downloads:list', () => (0, downloads_1.downloadList)());
+    onCommand('downloads:action', (_w, id, action) => {
+        if (typeof id === 'number' && typeof action === 'string')
+            (0, downloads_1.downloadAction)(id, action);
+    });
+    (0, downloads_1.onDownloadsChange)(() => {
+        for (const w of windows)
+            if (!w.chrome.webContents.isDestroyed())
+                w.chrome.webContents.send('downloads:update', (0, downloads_1.downloadList)());
+    });
     onQuery('history:list', (_w, query) => (0, suggest_1.searchHistory)((0, history_1.allHistory)(), query, Infinity));
     onQuery('history:clear', () => (0, history_1.clearHistory)());
     onQuery('tab:preview', (w, id) => previewTab(w, Number(id)));
@@ -581,8 +618,10 @@ function registerIpc() {
         const all = kind === 'all';
         if (all || kind === 'cache')
             await ses.clearCache();
-        if (all || kind === 'cookies')
+        if (all || kind === 'cookies') {
             await ses.clearStorageData();
+            store_1.store.clearTrustedHosts();
+        }
         if (all || kind === 'history')
             (0, history_1.clearHistory)();
     });
@@ -611,6 +650,7 @@ function createWindow(incognito = false) {
         height: 800,
         title: incognito ? `${APP_NAME} (Incognito)` : APP_NAME,
         icon: ICON, // Windows and Linux; macOS uses the Dock icon set at startup
+        autoHideMenuBar: true, // Windows/Linux: hidden until Alt is pressed; shortcuts keep working
         show: false, // shown once the chrome UI has painted, so there is no blank flash
         backgroundColor: '#1f2125',
         // macOS glass: the system blurs what is behind the window; the chrome draws its own window buttons.
