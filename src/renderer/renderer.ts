@@ -1179,11 +1179,14 @@ for (const button of el.settingsForm.querySelectorAll<HTMLButtonElement>('[data-
   });
 }
 const updateButton = document.getElementById('update-btn') as HTMLButtonElement;
+const updatePin = document.getElementById('update-pin') as HTMLInputElement;
+updatePin.value = localStorage.getItem('update-pin') ?? '';
 api.appVersion().then((v) => (document.getElementById('app-version')!.textContent = `Ambaser v${v}`));
 updateButton.addEventListener('click', async () => {
   updateButton.disabled = true;
   showStatus('Updating…');
-  showStatus(await api.updateApp());
+  localStorage.setItem('update-pin', updatePin.value);
+  showStatus(await api.updateApp(updatePin.value));
   updateButton.disabled = false;
 });
 el.settingsForm.addEventListener('submit', async (event) => {

@@ -34,6 +34,7 @@ var __importStar = (this && this.__importStar) || (function () {
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
 const electron_1 = require("electron");
+const fs = __importStar(require("fs"));
 const path = __importStar(require("path"));
 const url_1 = require("../shared/url");
 const app_pages_1 = require("./app-pages");
@@ -79,12 +80,22 @@ const webPreferences = {
     allowRunningInsecureContent: false,
 };
 const windows = [];
-const VERSION_URL = 'https://raw.githubusercontent.com/samuelhusein/Ambaser/main/package.json';
+// Where the private repo's releases are served (worker/index.js); set as "updateUrl" in package.json.
+const updateUrl = () => {
+    try {
+        return String(JSON.parse(fs.readFileSync(path.join(electron_1.app.getAppPath(), 'package.json'), 'utf8')).updateUrl || '').replace(/\/+$/, '');
+    }
+    catch {
+        return '';
+    }
+};
 let latestVersion = null;
 // Asks GitHub which version main is on. Offline or any failure just means no alert.
 async function checkVersion() {
     try {
-        const res = await electron_1.net.fetch(VERSION_URL, { signal: AbortSignal.timeout(10000) });
+        if (!updateUrl())
+            return;
+        const res = await electron_1.net.fetch(`${updateUrl()}/version`, { signal: AbortSignal.timeout(10000) });
         const version = res.ok ? (await res.json()).version : null;
         if (typeof version !== 'string' || !/^\d+\.\d+\.\d+$/.test(version) || version === latestVersion)
             return;
@@ -759,15 +770,36 @@ function registerIpc() {
     });
     onQuery('app:version', () => electron_1.app.getVersion());
     // Updates a git checkout: pull, install new dependencies if the lock file changed, restart. Resolves to a message.
-    onQuery('app:update', async (w) => {
-        const sh = (cmd) => (0, util_1.promisify)(child_process_1.exec)(cmd, { cwd: electron_1.app.getAppPath(), timeout: 180000 });
+    // A git checkout updates with git pull. Anything else downloads the ZIP from the update server with the PIN.
+    // Either way: install new packages if the lock file changed, then offer a restart. Resolves to a message.
+    onQuery('app:update', async (w, pin) => {
+        const root = electron_1.app.getAppPath();
+        const sh = (cmd) => (0, util_1.promisify)(child_process_1.exec)(cmd, { cwd: root, timeout: 180000 });
+        const lockFile = path.join(root, 'package-lock.json');
+        const lock = () => (fs.existsSync(lockFile) ? fs.readFileSync(lockFile, 'utf8') : '');
         try {
-            const lock = () => sh('git rev-parse HEAD:package-lock.json').then((r) => r.stdout);
-            const before = await lock();
-            const { stdout } = await sh('git pull --ff-only');
-            if (/already up to date/i.test(stdout))
-                return 'Already up to date';
-            if ((await lock()) !== before)
+            const before = lock();
+            if (fs.existsSync(path.join(root, '.git'))) {
+                const { stdout } = await sh('git pull --ff-only');
+                if (/already up to date/i.test(stdout))
+                    return 'Already up to date';
+            }
+            else {
+                if (!updateUrl())
+                    return 'No update server is set (updateUrl in package.json)';
+                if (!pin)
+                    return 'Enter the PIN first';
+                const res = await electron_1.net.fetch(`${updateUrl()}/download`, { method: 'POST', headers: { 'X-Pin': pin } });
+                if (res.status === 401)
+                    return 'Wrong PIN';
+                if (!res.ok)
+                    return `Download failed (${res.status})`;
+                const zip = path.join(electron_1.app.getPath('temp'), 'ambaser-update.zip');
+                fs.writeFileSync(zip, Buffer.from(await res.arrayBuffer()));
+                await sh(`tar -xf "${zip}" -C "${root}" --strip-components=1`); // GitHub puts everything in one top folder
+                fs.rmSync(zip, { force: true });
+            }
+            if (lock() !== before)
                 await sh('npm install --no-audit --no-fund');
             const { response } = await electron_1.dialog.showMessageBox(w.win, { type: 'info', message: 'Update downloaded', detail: 'Restart now to use it? Your tabs are restored.', buttons: ['Later', 'Restart'], defaultId: 1, cancelId: 0 });
             if (response !== 1)

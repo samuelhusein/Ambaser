@@ -112,7 +112,7 @@ export interface BrowserApi {
   newIncognito(): void;
   appVersion(): Promise<string>;
   // Pulls the latest code and offers a restart. Resolves to a message to show.
-  updateApp(): Promise<string>;
+  updateApp(pin: string): Promise<string>;
   toggleDevTools(): void;
   onShowHistory(callback: () => void): void;
   // A thumbnail of the tab as a data: URL, or null if there is none yet.

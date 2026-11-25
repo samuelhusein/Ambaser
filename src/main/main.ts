@@ -1,4 +1,5 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, net, session, shell, WebContentsView, IpcMainEvent, IpcMainInvokeEvent, WebContents } from 'electron';
+import * as fs from 'fs';
 import * as path from 'path';
 import { BLANK_URL, HOME_URL, certErrorUrl, displayUrl, isAllowedUrl, isAppUrl, loadErrorUrl, normalizeInput, unreadCount, withoutUnread } from '../shared/url';
 import { forgetCertificate, forgetCertificates, hasAcceptedCertificate, isTrusted, registerPages, registerScheme, runPageAction } from './app-pages';
@@ -80,13 +81,21 @@ interface Win {
 }
 
 const windows: Win[] = [];
-const VERSION_URL = 'https://raw.githubusercontent.com/samuelhusein/Ambaser/main/package.json';
+// Where the private repo's releases are served (worker/index.js); set as "updateUrl" in package.json.
+const updateUrl = (): string => {
+  try {
+    return String(JSON.parse(fs.readFileSync(path.join(app.getAppPath(), 'package.json'), 'utf8')).updateUrl || '').replace(/\/+$/, '');
+  } catch {
+    return '';
+  }
+};
 let latestVersion: string | null = null;
 
 // Asks GitHub which version main is on. Offline or any failure just means no alert.
 async function checkVersion(): Promise<void> {
   try {
-    const res = await net.fetch(VERSION_URL, { signal: AbortSignal.timeout(10000) });
+    if (!updateUrl()) return;
+    const res = await net.fetch(`${updateUrl()}/version`, { signal: AbortSignal.timeout(10000) });
     const version = res.ok ? ((await res.json()) as { version?: unknown }).version : null;
     if (typeof version !== 'string' || !/^\d+\.\d+\.\d+$/.test(version) || version === latestVersion) return;
     latestVersion = version;
@@ -701,14 +710,30 @@ function registerIpc(): void {
   });
   onQuery('app:version', () => app.getVersion());
   // Updates a git checkout: pull, install new dependencies if the lock file changed, restart. Resolves to a message.
-  onQuery('app:update', async (w) => {
-    const sh = (cmd: string) => promisify(exec)(cmd, { cwd: app.getAppPath(), timeout: 180000 });
+  // A git checkout updates with git pull. Anything else downloads the ZIP from the update server with the PIN.
+  // Either way: install new packages if the lock file changed, then offer a restart. Resolves to a message.
+  onQuery('app:update', async (w, pin) => {
+    const root = app.getAppPath();
+    const sh = (cmd: string) => promisify(exec)(cmd, { cwd: root, timeout: 180000 });
+    const lockFile = path.join(root, 'package-lock.json');
+    const lock = (): string => (fs.existsSync(lockFile) ? fs.readFileSync(lockFile, 'utf8') : '');
     try {
-      const lock = () => sh('git rev-parse HEAD:package-lock.json').then((r) => r.stdout);
-      const before = await lock();
-      const { stdout } = await sh('git pull --ff-only');
-      if (/already up to date/i.test(stdout)) return 'Already up to date';
-      if ((await lock()) !== before) await sh('npm install --no-audit --no-fund');
+      const before = lock();
+      if (fs.existsSync(path.join(root, '.git'))) {
+        const { stdout } = await sh('git pull --ff-only');
+        if (/already up to date/i.test(stdout)) return 'Already up to date';
+      } else {
+        if (!updateUrl()) return 'No update server is set (updateUrl in package.json)';
+        if (!pin) return 'Enter the PIN first';
+        const res = await net.fetch(`${updateUrl()}/download`, { method: 'POST', headers: { 'X-Pin': pin } });
+        if (res.status === 401) return 'Wrong PIN';
+        if (!res.ok) return `Download failed (${res.status})`;
+        const zip = path.join(app.getPath('temp'), 'ambaser-update.zip');
+        fs.writeFileSync(zip, Buffer.from(await res.arrayBuffer()));
+        await sh(`tar -xf "${zip}" -C "${root}" --strip-components=1`); // GitHub puts everything in one top folder
+        fs.rmSync(zip, { force: true });
+      }
+      if (lock() !== before) await sh('npm install --no-audit --no-fund');
       const { response } = await dialog.showMessageBox(w.win, { type: 'info', message: 'Update downloaded', detail: 'Restart now to use it? Your tabs are restored.', buttons: ['Later', 'Restart'], defaultId: 1, cancelId: 0 });
       if (response !== 1) return 'Updated. Restart to use it';
       app.relaunch();

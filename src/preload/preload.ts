@@ -24,7 +24,7 @@ const api: BrowserApi = {
   tabOverflow: (ids: number[]) => ipcRenderer.send('tabs:overflow', ids),
   newIncognito: () => ipcRenderer.send('window:incognito'),
   appVersion: () => ipcRenderer.invoke('app:version', ''),
-  updateApp: () => ipcRenderer.invoke('app:update', ''),
+  updateApp: (pin: string) => ipcRenderer.invoke('app:update', pin),
   toggleDevTools: () => ipcRenderer.send('page:devtools'),
   togglePin: () => ipcRenderer.send('pin:toggle'),
   onShowHistory: (callback: () => void) => {
