@@ -7,6 +7,7 @@ exports.watchDownloads = watchDownloads;
 // Everyday browser behaviour for web pages: right-click menu, downloads, links to other apps.
 const electron_1 = require("electron");
 const url_1 = require("../shared/url");
+const downloads_1 = require("./downloads");
 // Links handled by another app. Anything not listed is ignored.
 const EXTERNAL = new Set(['mailto:', 'tel:', 'zoommtg:', 'msteams:']);
 function isExternal(url) {
@@ -52,6 +53,8 @@ function watchDownloads(partition) {
         return;
     watched.add(partition);
     electron_1.session.fromPartition(partition).on('will-download', (_event, item) => {
+        if (partition.startsWith('persist:'))
+            (0, downloads_1.trackDownload)(item); // incognito downloads are not listed
         const progress = (value) => {
             for (const win of electron_1.BrowserWindow.getAllWindows())
                 win.setProgressBar(value);

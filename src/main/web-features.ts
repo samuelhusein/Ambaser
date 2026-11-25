@@ -1,6 +1,7 @@
 // Everyday browser behaviour for web pages: right-click menu, downloads, links to other apps.
 import { app, BrowserWindow, clipboard, dialog, Menu, MenuItemConstructorOptions, Notification, session, shell, WebContents } from 'electron';
 import { isAllowedUrl, normalizeInput } from '../shared/url';
+import { trackDownload } from './downloads';
 
 // Links handled by another app. Anything not listed is ignored.
 const EXTERNAL = new Set(['mailto:', 'tel:', 'zoommtg:', 'msteams:']);
@@ -51,6 +52,7 @@ export function watchDownloads(partition: string): void {
   if (watched.has(partition)) return;
   watched.add(partition);
   session.fromPartition(partition).on('will-download', (_event, item) => {
+    if (partition.startsWith('persist:')) trackDownload(item); // incognito downloads are not listed
     const progress = (value: number): void => {
       for (const win of BrowserWindow.getAllWindows()) win.setProgressBar(value);
     };

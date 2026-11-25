@@ -20,6 +20,7 @@ export interface TabState {
   loading: boolean;
   sleeping: boolean;
   unread: number; // from the page title
+  muted: boolean;
 }
 
 export interface BrowserState {
@@ -73,7 +74,21 @@ export interface NetworkSettings {
   dnsUrl: string;
 }
 
+export interface DownloadInfo {
+  id: number;
+  name: string;
+  received: number;
+  total: number; // 0 when the size is unknown
+  state: 'progressing' | 'paused' | 'completed' | 'cancelled' | 'interrupted';
+  path: string;
+}
+
 export interface BrowserApi {
+  unpin(url: string): void;
+  tabOverflow(ids: number[]): void;
+  listDownloads(): Promise<DownloadInfo[]>;
+  onDownloads(callback: (list: DownloadInfo[]) => void): void;
+  downloadAction(id: number, action: 'pause' | 'resume' | 'cancel' | 'show' | 'open' | 'remove' | 'clear'): void;
   find(text: string, forward: boolean, next: boolean): void;
   stopFind(): void;
   onShowFind(callback: () => void): void;

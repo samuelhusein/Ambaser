@@ -95,6 +95,7 @@ button, input { font: inherit; color: var(--fg); }
 }
 .tab.sleeping { opacity: 0.55; }
 .tab:hover { background: var(--hover); }
+.tab-muted { color: var(--fg-dim); }
 .tab-favicon { flex: none; width: 16px; height: 16px; }
 .tab-title { flex: 1; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .tab-spinner { flex: none; width: 16px; height: 16px; border-radius: 50%; border: 2px solid var(--accent); border-top-color: transparent; animation: spin 0.8s linear infinite; }
@@ -275,10 +276,31 @@ body.mac .history-panel { background: linear-gradient(light-dark(rgba(246, 246, 
 .badge[hidden] { display: none; }
 body.incognito .chrome, body.mac.incognito .chrome { background: linear-gradient(112deg, #2b1f4d, #17122b 52%, #261a45); }
 
+.settings-layout { display: flex; min-height: 100%; }
+.settings-nav { flex: none; width: 180px; display: flex; flex-direction: column; gap: 4px; padding: 24px 12px; border-right: 1px solid var(--line); }
+.nav-btn { height: 32px; padding: 0 12px; border: 0; border-radius: 8px; background: transparent; text-align: left; cursor: pointer; color: var(--fg-dim); }
+.nav-btn:hover { background: var(--hover); }
+.nav-btn.active { background: var(--hover); color: var(--fg); }
+.settings-layout .history-body { flex: 1; min-width: 0; margin: 0; }
+.section { display: flex; flex-direction: column; gap: 16px; }
+.section[hidden] { display: none; }
+.downloads { position: absolute; top: 80px; right: var(--edge); display: flex; flex-direction: column; gap: var(--gap); width: 380px; max-height: 360px; overflow-y: auto; padding: var(--gap); border: 1px solid var(--line); border-radius: 14px; background: var(--popup); box-shadow: var(--shine), 0 8px 24px rgba(0, 0, 0, 0.35); }
+.downloads[hidden] { display: none; }
+.download { height: auto; min-height: 44px; padding: 6px; cursor: default; }
+.download-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.download-body .row-text { display: block; flex: none; }
+.download-body .row-url { display: block; margin: 0; font-size: 12px; }
+.bar { height: 4px; border-radius: 2px; background: var(--line); overflow: hidden; }
+.bar div { height: 100%; background: var(--accent); }
+.bar.unknown div { opacity: 0.5; }
+#downloads-btn.busy { color: var(--accent); }
+.overflow-btn { flex: none; align-self: center; height: 24px; padding: 0 8px; border: 1px solid var(--line); border-radius: 12px; background: var(--glass); cursor: pointer; font-variant-numeric: tabular-nums; }
+.overflow-btn:hover { background: var(--hover); }
+.overflow-btn[hidden] { display: none; }
 .clear-actions { display: flex; flex-wrap: wrap; gap: var(--gap); margin-top: 6px; }
 /* ---- Settings ---- */
-/* Four buttons left of the address bar and five on its right. */
-.dropdown { right: calc(var(--edge) + 5 * var(--control) + 6 * var(--gap)); }
+/* Four buttons left of the address bar and six on its right. */
+.dropdown { right: calc(var(--edge) + 6 * var(--control) + 7 * var(--gap)); }
 .setting { display: grid; grid-template-columns: 160px 1fr; align-items: center; gap: 12px; }
 .setting .field { width: 100%; margin: 0; }
 .field:disabled { opacity: 0.45; }
@@ -317,3 +339,4 @@ body.incognito .chrome, body.mac.incognito .chrome { background: linear-gradient
 .swatch[data-theme-choice="rose"] { --from: #f6cfc4; --via: #c98593; --to: #6e3f55; }
 .swatch[data-theme-choice="champagne"] { --from: #f7e7b8; --via: #c2a36a; --to: #6f5a34; }
 .swatch[data-theme-choice="emerald"] { --from: #7fd6ad; --via: #1f7a5c; --to: #0b3438; }
+#settings-save[hidden] { display: none; }
