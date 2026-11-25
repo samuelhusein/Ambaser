@@ -1,21 +1,31 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
   <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#7cc0ff"/>
-      <stop offset="1" stop-color="#2f5fe0"/>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#4a2a78"/>
+      <stop offset="0.52" stop-color="#1b1b3f"/>
+      <stop offset="1" stop-color="#0c3f4c"/>
+    </linearGradient>
+    <linearGradient id="left" x1="0" y1="1" x2="1" y2="0">
+      <stop offset="0" stop-color="#8f74e8"/>
+      <stop offset="1" stop-color="#f1eaff"/>
+    </linearGradient>
+    <linearGradient id="right" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#eafcff"/>
+      <stop offset="1" stop-color="#35b9ae"/>
     </linearGradient>
     <linearGradient id="shine" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#fff" stop-opacity="0.32"/>
+      <stop offset="0" stop-color="#fff" stop-opacity="0.16"/>
       <stop offset="1" stop-color="#fff" stop-opacity="0"/>
     </linearGradient>
   </defs>
   <!-- macOS icon grid: an 824px rounded square centred on a 1024px canvas. -->
   <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#bg)"/>
   <rect x="100" y="100" width="824" height="412" rx="185" fill="url(#shine)"/>
-  <rect x="103" y="103" width="818" height="818" rx="182" fill="none" stroke="#fff" stroke-opacity="0.35" stroke-width="6"/>
-  <g fill="none" stroke="#fff" stroke-width="38" stroke-linecap="round">
-    <circle cx="512" cy="512" r="256"/>
-    <ellipse cx="512" cy="512" rx="112" ry="256"/>
-    <path d="M256 512H768"/>
+  <rect x="103" y="103" width="818" height="818" rx="182" fill="none" stroke="#fff" stroke-opacity="0.2" stroke-width="6"/>
+  <!-- An "A" made of two ribbons and a dot. -->
+  <g fill="none" stroke-width="112" stroke-linecap="round">
+    <path d="M326 714 L512 310" stroke="url(#left)"/>
+    <path d="M512 310 L698 714" stroke="url(#right)"/>
   </g>
+  <circle cx="512" cy="642" r="52" fill="#fff"/>
 </svg>
