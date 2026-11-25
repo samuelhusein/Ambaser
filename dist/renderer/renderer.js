@@ -22,6 +22,14 @@ const el = {
     overflow: document.getElementById('tab-overflow'),
     favoritesList: document.getElementById('favorites-list'),
     favorites: document.getElementById('favorites'),
+    jam: document.getElementById('jam'),
+    jamButton: document.getElementById('jam-btn'),
+    jamServer: document.getElementById('jam-server'),
+    jamRoom: document.getElementById('jam-room'),
+    jamJoin: document.getElementById('jam-join'),
+    jamShare: document.getElementById('jam-share'),
+    jamLeave: document.getElementById('jam-leave'),
+    jamStatus: document.getElementById('jam-status'),
     favmenu: document.getElementById('favmenu'),
     favoritesButton: document.getElementById('favorites-btn'),
     dropdown: document.getElementById('dropdown'),
@@ -75,6 +83,7 @@ const ICONS = {
     sliders: 'M4 7h10M18 7h2M16 5v4M4 17h2M10 17h10M8 15v4',
     muted: 'M4 9v6h4l5 4V5L8 9zM17 9l4 6M21 9l-4 6',
     pause: 'M8 5v14M16 5v14',
+    music: 'M9 18V5l12-2v13M9 18a3 3 0 1 1-6 0a3 3 0 0 1 6 0M21 16a3 3 0 1 1-6 0a3 3 0 0 1 6 0',
     folder: 'M3 7h6l2 2h10v10H3z',
     download: 'M12 4v11M7 11l5 5 5-5M5 20h14',
     home: 'M4 11l8-7l8 7M6 10v10h12V10',
@@ -680,8 +689,9 @@ function resizeChrome() {
     const preview = el.preview.hidden ? 0 : Math.ceil(el.preview.getBoundingClientRect().bottom) + 16;
     const find = el.find.hidden ? 0 : Math.ceil(el.find.getBoundingClientRect().bottom) + 16;
     const downloads = el.downloads.hidden ? 0 : Math.ceil(el.downloads.getBoundingClientRect().bottom) + 16;
+    const jam = el.jam.hidden ? 0 : Math.ceil(el.jam.getBoundingClientRect().bottom) + 16;
     const favmenu = el.favmenu.hidden ? 0 : Math.ceil(el.favmenu.getBoundingClientRect().bottom) + 16;
-    api.setDropdownHeight(panelOpen() ? 100000 : Math.max(dropdown, editor, preview, find, site, downloads, favmenu));
+    api.setDropdownHeight(panelOpen() ? 100000 : Math.max(dropdown, editor, preview, find, site, downloads, favmenu, jam));
 }
 function drawDropdown() {
     el.dropdown.replaceChildren(...items.map(suggestionElement));
@@ -1066,6 +1076,48 @@ el.findPrev.addEventListener('click', () => api.find(el.findText.value, false, t
 el.findNext.addEventListener('click', () => api.find(el.findText.value, true, true));
 el.findClose.addEventListener('click', closeFind);
 api.onShowFind(openFind);
+// Jam: a room of friends whose video or audio plays in step.
+function closeJam() {
+    if (el.jam.hidden)
+        return;
+    el.jam.hidden = true;
+    resizeChrome();
+}
+el.jamServer.value = localStorage.getItem('jam-server') ?? '';
+el.jamButton.addEventListener('click', () => {
+    if (!el.jam.hidden)
+        return closeJam();
+    closePanel();
+    closeEditor();
+    closeDropdown();
+    closeDownloads();
+    closeFavmenu();
+    hidePreview();
+    el.jam.hidden = false;
+    resizeChrome();
+});
+el.jamJoin.addEventListener('click', () => {
+    localStorage.setItem('jam-server', el.jamServer.value.trim());
+    api.jamJoin(el.jamServer.value.trim(), el.jamRoom.value.trim());
+});
+el.jamShare.addEventListener('click', () => api.jamShare());
+el.jamLeave.addEventListener('click', () => api.jamLeave());
+api.onJamStatus((text, inRoom) => {
+    el.jamStatus.textContent = text;
+    el.jamJoin.hidden = inRoom;
+    el.jamShare.hidden = el.jamLeave.hidden = !inRoom;
+    el.jamButton.classList.toggle('busy', inRoom);
+    resizeChrome();
+});
+document.addEventListener('mousedown', (event) => {
+    const target = event.target;
+    if (!el.jam.contains(target) && !el.jamButton.contains(target))
+        closeJam();
+});
+document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape')
+        closeJam();
+});
 api.onFindResult((current, total) => {
     el.findCount.textContent = total ? `${current} / ${total}` : 'No results';
 });

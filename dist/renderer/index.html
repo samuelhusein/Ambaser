@@ -32,6 +32,7 @@
       <button id="history-btn" class="icon-btn" title="History" data-icon="clock"></button>
       <button id="incognito-btn" class="icon-btn" title="New incognito window (⇧⌘N)" data-icon="incognito"></button>
       <button id="devtools-btn" class="icon-btn" title="Developer tools (F12)" data-icon="code"></button>
+      <button id="jam-btn" class="icon-btn" title="Jam with friends" data-icon="music"></button>
       <button id="downloads-btn" class="icon-btn" title="Downloads" data-icon="download"></button>
       <button id="settings-btn" class="icon-btn" title="Settings" data-icon="sliders"></button>
     </div>
@@ -49,6 +50,16 @@
     <div id="site-permissions"></div>
     <p id="site-note" class="note" role="status"></p>
     <button id="site-reload" class="text-btn" hidden>Reload page</button>
+  </div>
+  <div id="jam" class="downloads jam" hidden>
+    <input id="jam-server" class="field" type="text" spellcheck="false" autocomplete="off" placeholder="Server, e.g. ws://192.168.1.5:8787">
+    <input id="jam-room" class="field" type="text" spellcheck="false" autocomplete="off" placeholder="Room code (new codes create the room)">
+    <div class="jam-actions">
+      <button id="jam-join" class="text-btn">Join</button>
+      <button id="jam-share" class="text-btn" hidden>Share this page</button>
+      <button id="jam-leave" class="text-btn danger" hidden>Leave</button>
+    </div>
+    <p id="jam-status" class="note" role="status"></p>
   </div>
   <div id="favmenu" class="downloads favmenu" hidden></div>
   <div id="find" class="find" hidden>

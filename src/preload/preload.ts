@@ -23,6 +23,12 @@ const api: BrowserApi = {
   unpin: (url: string) => ipcRenderer.send('pin:remove', url),
   tabOverflow: (ids: number[]) => ipcRenderer.send('tabs:overflow', ids),
   newIncognito: () => ipcRenderer.send('window:incognito'),
+  jamJoin: (server: string, room: string) => ipcRenderer.send('jam:join', server, room),
+  jamLeave: () => ipcRenderer.send('jam:leave'),
+  jamShare: () => ipcRenderer.send('jam:share'),
+  onJamStatus: (callback: (text: string, inRoom: boolean) => void) => {
+    ipcRenderer.on('jam:status', (_event, text: string, inRoom: boolean) => callback(text, inRoom));
+  },
   toggleDevTools: () => ipcRenderer.send('page:devtools'),
   togglePin: () => ipcRenderer.send('pin:toggle'),
   onShowHistory: (callback: () => void) => {

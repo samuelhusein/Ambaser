@@ -23,6 +23,12 @@ const api = {
     unpin: (url) => electron_1.ipcRenderer.send('pin:remove', url),
     tabOverflow: (ids) => electron_1.ipcRenderer.send('tabs:overflow', ids),
     newIncognito: () => electron_1.ipcRenderer.send('window:incognito'),
+    jamJoin: (server, room) => electron_1.ipcRenderer.send('jam:join', server, room),
+    jamLeave: () => electron_1.ipcRenderer.send('jam:leave'),
+    jamShare: () => electron_1.ipcRenderer.send('jam:share'),
+    onJamStatus: (callback) => {
+        electron_1.ipcRenderer.on('jam:status', (_event, text, inRoom) => callback(text, inRoom));
+    },
     toggleDevTools: () => electron_1.ipcRenderer.send('page:devtools'),
     togglePin: () => electron_1.ipcRenderer.send('pin:toggle'),
     onShowHistory: (callback) => {

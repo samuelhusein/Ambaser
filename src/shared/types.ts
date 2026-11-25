@@ -107,6 +107,10 @@ export interface BrowserApi {
   forgetCertificate(origin: string): Promise<void>;
   togglePin(): void;
   newIncognito(): void;
+  jamJoin(server: string, room: string): void;
+  jamLeave(): void;
+  jamShare(): void;
+  onJamStatus(callback: (text: string, inRoom: boolean) => void): void;
   toggleDevTools(): void;
   onShowHistory(callback: () => void): void;
   // A thumbnail of the tab as a data: URL, or null if there is none yet.

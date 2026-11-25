@@ -11,6 +11,7 @@ import { parseAppearance } from '../shared/appearance';
 import { secureOrigin } from '../shared/permissions';
 import { parseSuggestions, searchHistory, suggestQuery } from '../shared/suggest';
 import { GROUP_COLORS, moveToGroup, patchGroup, placeTab, reviveGroups } from '../shared/groups';
+import { jamJoin, jamLeave, jamSend, parseJam } from './jam';
 import { downloadAction, downloadList, onDownloadsChange } from './downloads';
 import { allHistory, clearHistory, loadHistory, recordVisit, removeVisit, retitle, setFavicon } from './history';
 import type { BrowserState, GroupState, SiteInfo, TabDrop } from '../shared/types';
@@ -74,6 +75,7 @@ interface Win {
 }
 
 const windows: Win[] = [];
+let jamWin: Win | null = null; // the window that joined the room
 let nextId = 1;
 let nextGroupId = 1;
 let incognitoCount = 0;
@@ -645,6 +647,37 @@ function registerIpc(): void {
     else wc.stopFindInPage('clearSelection');
   });
   onCommand('find:stop', stopFind);
+  const jamStatus = (w: Win, text: string, inRoom: boolean): void => {
+    if (!w.chrome.webContents.isDestroyed()) w.chrome.webContents.send('jam:status', text, inRoom);
+  };
+  onCommand('jam:join', (w, server, room) => {
+    if (typeof server !== 'string' || typeof room !== 'string') return;
+    jamWin = w;
+    jamJoin(
+      server,
+      room,
+      (m) => {
+        const wc = w.activeTab?.view.webContents;
+        if (m.type === 'media') wc && !wc.isDestroyed() && wc.send('jam:apply', m);
+        else createTab(w, m.url);
+      },
+      (text, inRoom) => jamStatus(w, text, inRoom),
+    );
+  });
+  onCommand('jam:leave', (w) => {
+    if (jamWin !== w) return;
+    jamLeave();
+    jamStatus(w, 'Left the room', false);
+  });
+  onCommand('jam:share', (w) => {
+    const m = parseJam({ type: 'nav', url: w.activeTab?.url });
+    if (jamWin === w && m) jamSend(m);
+  });
+  // Only the active page of the window in the room may report its media.
+  ipcMain.on('jam:media', (event, raw) => {
+    const m = parseJam(raw);
+    if (m?.type === 'media' && jamWin?.activeTab?.view.webContents === event.sender) jamSend(m);
+  });
   onQuery('data:clear', async (w, kind) => {
     const warnings: Record<string, string> = {
       cache: 'Clear the cache?',
@@ -729,6 +762,10 @@ function createWindow(incognito = false, saved: SavedTab[] = []): Win {
     store.setLastSession(open.filter((t) => isRestorable(t.url)), w.groups);
   });
   win.on('closed', () => {
+    if (jamWin === w) {
+      jamLeave();
+      jamWin = null;
+    }
     windows.splice(windows.indexOf(w), 1);
     for (const tab of w.tabs.splice(0)) tab.view.webContents.close();
     chrome.webContents.close();
