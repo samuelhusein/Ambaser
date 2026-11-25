@@ -420,31 +420,32 @@ function createTab(w: Win, url: string, groupId: number | null = null): void {
   wc.on('did-navigate-in-page', (_event, _url, isMainFrame) => {
     if (isMainFrame) onNav();
   });
-  wc.on('did-start-loading', () => {
-    if (tab.sleeping) return;
-    tab.loading = true;
-    broadcast(w);
-  });
-  // The spinner must stop even if the tab fell asleep mid-load, and must not wait for a hanging image or frame.
+  // The spinner reflects this tab's own top-level navigation only. "did-start-loading" instead
+  // reflects the whole frame tree (every iframe, and a page's own background fetches, a kept-open
+  // WebSocket among them on some sites) and can restart long after the page itself finished
+  // loading, which used to leave the spinner turning with nowhere to stop.
+  let loadWatchdog: ReturnType<typeof setTimeout> | undefined;
   const stopSpinner = (): void => {
+    clearTimeout(loadWatchdog);
     if (tab.sleeping || !tab.loading) return;
     tab.loading = false;
     broadcast(w);
   };
-  wc.on('did-finish-load', stopSpinner);
-  wc.on('dom-ready', () => {
-    const page = wc.getURL();
-    setTimeout(() => {
-      if (!wc.isDestroyed() && wc.getURL() === page) stopSpinner(); // 15s after the page is usable
-    }, 15000);
+  wc.on('did-start-navigation', (details) => {
+    if (tab.sleeping || !details.isMainFrame || details.isSameDocument) return;
+    tab.loading = true;
+    broadcast(w);
+    // Whatever this page's own connections do afterwards, the spinner itself waits no longer than this.
+    clearTimeout(loadWatchdog);
+    loadWatchdog = setTimeout(stopSpinner, 20000);
   });
+  wc.on('did-finish-load', stopSpinner);
   wc.on('did-stop-loading', () => {
-    tab.loading = false;
+    stopSpinner();
     if (tab.sleeping) return;
     setTimeout(() => {
       if (!wc.isDestroyed()) void capture(w, tab);
     }, 500); // give the page a moment to paint
-    broadcast(w);
   });
   wc.on('did-fail-load', (_event, code, description, validatedUrl, isMainFrame) => {
     // -3 is ERR_ABORTED, raised on every user cancel or redirect; not an error to show.
