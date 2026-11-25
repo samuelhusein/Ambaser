@@ -162,7 +162,7 @@ button, input { font: inherit; color: var(--fg); }
 .row-url { margin-left: var(--edge); color: var(--fg-dim); }
 
 .history-panel { position: absolute; top: 120px; right: 0; bottom: 0; left: 0; overflow-y: auto; background: var(--bg); }
-.history-body { display: flex; flex-direction: column; gap: 16px; max-width: 768px; margin: 0 auto; padding: 24px; }
+.history-body { display: flex; flex-direction: column; gap: 16px; width: 100%; max-width: 960px; margin: 0 auto; padding: 24px; }
 .history-head { display: flex; align-items: center; gap: var(--edge); }
 .history-head h1 { flex: 1; margin: 0; font-size: 20px; font-weight: 600; }
 .history-time { flex: none; width: 120px; white-space: nowrap; color: var(--fg-dim); font-variant-numeric: tabular-nums; }
@@ -280,12 +280,12 @@ body.mac .history-panel { background: linear-gradient(light-dark(rgba(246, 246, 
 .badge[hidden] { display: none; }
 body.incognito .chrome, body.mac.incognito .chrome { background: linear-gradient(112deg, #2b1f4d, #17122b 52%, #261a45); }
 
-.settings-layout { display: flex; min-height: 100%; }
+.settings-layout { display: flex; width: 100%; max-width: 960px; min-height: 100%; margin: 0 auto; }
 .settings-nav { flex: none; width: 180px; display: flex; flex-direction: column; gap: 4px; padding: 24px 12px; border-right: 1px solid var(--line); }
 .nav-btn { height: 32px; padding: 0 12px; border: 0; border-radius: 8px; background: transparent; text-align: left; cursor: pointer; color: var(--fg-dim); }
 .nav-btn:hover { background: var(--hover); }
 .nav-btn.active { background: var(--hover); color: var(--fg); }
-.settings-layout .history-body { flex: 1; min-width: 0; margin: 0; }
+.settings-layout .history-body { flex: 1; min-width: 0; max-width: none; margin: 0; }
 .section { display: flex; flex-direction: column; gap: 16px; }
 .section[hidden] { display: none; }
 .downloads { position: absolute; top: 80px; right: var(--edge); display: flex; flex-direction: column; gap: var(--gap); width: 380px; max-height: 360px; overflow-y: auto; padding: var(--gap); border: 1px solid var(--line); border-radius: 14px; background: var(--popup); box-shadow: var(--shine), 0 8px 24px rgba(0, 0, 0, 0.35); }
