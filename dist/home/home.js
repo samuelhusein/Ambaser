@@ -94,6 +94,40 @@ byId('search').addEventListener('submit', (event) => {
   if (text) location.href = `mybrowser://home/open?q=${encodeURIComponent(text)}`;
 });
 
+function setCredit(credit) {
+  const link = byId('wallpaper-credit');
+  if (!credit) return (link.hidden = true);
+  link.href = credit.url;
+  link.textContent = `Photo by ${credit.author} on Unsplash`;
+  link.hidden = false;
+}
+
+// A new photo from Unsplash (served by Lorem Picsum, no account needed) once a day; the server
+// picks the day, so the photo and its credit below always agree on which day it is.
+function applyWallpaper(wallpaper, day, credit) {
+  if (wallpaper !== 'daily') {
+    document.body.classList.remove('has-wallpaper');
+    return setCredit(null);
+  }
+  const width = Math.min(2400, Math.round((screen.width || 1600) * (window.devicePixelRatio || 1)));
+  const height = Math.min(1500, Math.round((screen.height || 1000) * (window.devicePixelRatio || 1)));
+  const url = `https://picsum.photos/seed/${day}/${width}/${height}`;
+  // Swap the image in only once it has actually loaded, so a blocked or offline network just
+  // leaves today's gradient background instead of a broken image or a flash of grey; the credit
+  // follows the same fate, so it is never shown next to a photo that isn't actually there.
+  const probe = new Image();
+  probe.onload = () => {
+    byId('wallpaper').src = url;
+    document.body.classList.add('has-wallpaper');
+    setCredit(credit);
+  };
+  probe.onerror = () => {
+    document.body.classList.remove('has-wallpaper');
+    setCredit(null);
+  };
+  probe.src = url;
+}
+
 fetch('mybrowser://home/api/data')
   .then((res) => res.json())
   .then((data) => {
@@ -102,4 +136,5 @@ fetch('mybrowser://home/api/data')
     byId('activity').hidden = data.incognito;
     render(data.pinned, 'pinned', tile);
     render(data.recent, 'recent', row);
+    applyWallpaper(data.wallpaper, data.wallpaperDay, data.wallpaperCredit);
   });

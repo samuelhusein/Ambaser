@@ -47,6 +47,30 @@ const path = __importStar(require("path"));
 const url_1 = require("../shared/url");
 const history_1 = require("./history");
 const store_1 = require("./store");
+// The day's photo (same for everyone, chosen by date) rarely changes within a run, so its credit
+// is fetched once per day and reused; concurrent new tabs share the one request in flight.
+let creditCache = null;
+async function fetchCredit(day) {
+    try {
+        // A tiny request is enough: Lorem Picsum (which serves Unsplash photos) returns the chosen
+        // photo's id in a header regardless of the size asked for.
+        const tiny = await electron_1.net.fetch(`https://picsum.photos/seed/${day}/16/16`, { signal: AbortSignal.timeout(4000) });
+        const id = tiny.headers.get('picsum-id');
+        if (!id)
+            return null;
+        const info = await electron_1.net.fetch(`https://picsum.photos/id/${id}/info`, { signal: AbortSignal.timeout(4000) }).then((r) => r.json());
+        const { author, url } = (info ?? {});
+        return typeof author === 'string' && typeof url === 'string' ? { author, url } : null;
+    }
+    catch {
+        return null; // offline, blocked, or Picsum is unreachable: the photo already falls back gracefully, and so does its credit
+    }
+}
+function wallpaperCredit(day) {
+    if (creditCache?.day !== day)
+        creditCache = { day, value: fetchCredit(day) };
+    return creditCache.value;
+}
 const CONTENT_TYPES = { html: 'text/html', css: 'text/css', js: 'text/javascript' };
 // Bad certificates the user accepted: host -> fingerprint, so a different certificate warns again.
 // Kept on disk for normal windows, in memory for incognito ones.
@@ -105,7 +129,7 @@ function serveFile(folder, pathname) {
     }
 }
 // Read-only: any website can send requests here, so nothing served by the protocol changes anything.
-function handle(request, incognito) {
+async function handle(request, incognito) {
     const url = new URL(request.url);
     if (request.method !== 'GET' || !['home', url_1.CERT_ERROR_HOST, url_1.LOAD_ERROR_HOST].includes(url.hostname))
         return new Response('Not found', { status: 404 });
@@ -117,7 +141,19 @@ function handle(request, incognito) {
             if (e.favicon && URL.canParse(e.url))
                 known.set(new URL(e.url).host, e.favicon);
         const withIcon = (e) => ({ ...e, favicon: e.favicon || (URL.canParse(e.url) ? known.get(new URL(e.url).host) : undefined) });
-        return Response.json({ incognito, theme: store_1.store.appearance().theme, pinned: store_1.store.pinned().map(withIcon), recent: incognito ? [] : (0, history_1.allHistory)().slice(0, 6).map(withIcon) });
+        // Decided here, not by the page's own clock, so the photo and its credit always agree on which day it is.
+        const wallpaperDay = new Date().toLocaleDateString('en-CA');
+        const { wallpaper, theme } = store_1.store.appearance();
+        const credit = wallpaper === 'daily' ? await wallpaperCredit(wallpaperDay) : null;
+        return Response.json({
+            incognito,
+            theme,
+            wallpaper,
+            wallpaperDay,
+            wallpaperCredit: credit,
+            pinned: store_1.store.pinned().map(withIcon),
+            recent: incognito ? [] : (0, history_1.allHistory)().slice(0, 6).map(withIcon),
+        });
     }
     return serveFile(url.hostname, url.pathname);
 }

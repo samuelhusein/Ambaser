@@ -29,6 +29,8 @@ const api: BrowserApi = {
   onJamStatus: (callback: (text: string, inRoom: boolean) => void) => {
     ipcRenderer.on('jam:status', (_event, text: string, inRoom: boolean) => callback(text, inRoom));
   },
+  appVersion: () => ipcRenderer.invoke('app:version', ''),
+  updateApp: (pin: string) => ipcRenderer.invoke('app:update', pin),
   toggleDevTools: () => ipcRenderer.send('page:devtools'),
   togglePin: () => ipcRenderer.send('pin:toggle'),
   onShowHistory: (callback: () => void) => {

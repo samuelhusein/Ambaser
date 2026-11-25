@@ -27,6 +27,7 @@ export interface BrowserState {
   tabs: TabState[];
   groups: GroupState[];
   appearance: Appearance;
+  updateVersion: string | null; // a newer release exists on GitHub
   activeId: number | null;
   canGoBack: boolean;
   canGoForward: boolean;
@@ -38,6 +39,8 @@ export interface BrowserState {
 export interface Appearance {
   mode: 'system' | 'light' | 'dark';
   theme: 'default' | 'midnight' | 'titanium' | 'aurora' | 'rose' | 'champagne' | 'emerald';
+  // A new photo every day, borrowed from Unsplash via Lorem Picsum; 'none' keeps the plain theme background.
+  wallpaper: 'none' | 'daily';
 }
 
 export type PermissionValue = 'ask' | 'allow' | 'block';
@@ -111,6 +114,9 @@ export interface BrowserApi {
   jamLeave(): void;
   jamShare(): void;
   onJamStatus(callback: (text: string, inRoom: boolean) => void): void;
+  appVersion(): Promise<string>;
+  // Pulls the latest code and offers a restart. Resolves to a message to show.
+  updateApp(pin: string): Promise<string>;
   toggleDevTools(): void;
   onShowHistory(callback: () => void): void;
   // A thumbnail of the tab as a data: URL, or null if there is none yet.

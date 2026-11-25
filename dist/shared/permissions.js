@@ -5,7 +5,9 @@ exports.kindsOf = kindsOf;
 exports.secureOrigin = secureOrigin;
 // Which site permissions are harmless, which the user is asked about; everything else is refused.
 // No Electron imports so it can be unit tested.
-const HARMLESS = new Set(['fullscreen', 'pointerLock', 'clipboard-sanitized-write']);
+// Real Chrome grants these silently too: they only affect local storage eviction and deferred
+// sync scheduling, and tell the site nothing about the person using it.
+const HARMLESS = new Set(['fullscreen', 'pointerLock', 'clipboard-sanitized-write', 'persistent-storage', 'background-sync', 'periodic-background-sync']);
 const QUESTIONS = {
     notifications: 'show notifications',
     geolocation: 'know your location',

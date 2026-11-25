@@ -1,4 +1,5 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, net, session, shell, WebContentsView, IpcMainEvent, IpcMainInvokeEvent, WebContents } from 'electron';
+import * as fs from 'fs';
 import * as path from 'path';
 import { BLANK_URL, HOME_URL, certErrorUrl, displayUrl, isAllowedUrl, isAppUrl, loadErrorUrl, normalizeInput, unreadCount, withoutUnread } from '../shared/url';
 import { forgetCertificate, forgetCertificates, hasAcceptedCertificate, isTrusted, registerPages, registerScheme, runPageAction } from './app-pages';
@@ -12,6 +13,9 @@ import { secureOrigin } from '../shared/permissions';
 import { parseSuggestions, searchHistory, suggestQuery } from '../shared/suggest';
 import { GROUP_COLORS, moveToGroup, patchGroup, placeTab, reviveGroups } from '../shared/groups';
 import { jamJoin, jamLeave, jamSend, parseJam } from './jam';
+import { isNewer } from '../shared/version';
+import { exec } from 'child_process';
+import { promisify } from 'util';
 import { downloadAction, downloadList, onDownloadsChange } from './downloads';
 import { allHistory, clearHistory, loadHistory, recordVisit, removeVisit, retitle, setFavicon } from './history';
 import type { BrowserState, GroupState, SiteInfo, TabDrop } from '../shared/types';
@@ -29,6 +33,9 @@ registerScheme();
 app.commandLine.appendSwitch('js-flags', '--max-old-space-size=1024');
 app.commandLine.appendSwitch('disk-cache-size', String(100 * 1024 * 1024));
 app.commandLine.appendSwitch('disable-features', 'SpareRendererForSitePerProcess');
+// Blocks WebRTC from revealing this machine's local network IP to any site (video calls, etc.),
+// which otherwise leaks even through a proxy or on an untrusted network.
+app.commandLine.appendSwitch('force-webrtc-ip-handling-policy', 'disable_non_proxied_udp');
 
 // Renamed from MyBrowser: keep the old data folder so history, pins and logins carry over.
 const dataFolder = app.getPath('userData');
@@ -76,6 +83,27 @@ interface Win {
 
 const windows: Win[] = [];
 let jamWin: Win | null = null; // the window that joined the room
+// Where the private repo's releases are served (worker/index.js); set as "updateUrl" in package.json.
+const updateUrl = (): string => {
+  try {
+    return String(JSON.parse(fs.readFileSync(path.join(app.getAppPath(), 'package.json'), 'utf8')).updateUrl || '').replace(/\/+$/, '');
+  } catch {
+    return '';
+  }
+};
+let latestVersion: string | null = null;
+
+// Asks GitHub which version main is on. Offline or any failure just means no alert.
+async function checkVersion(): Promise<void> {
+  try {
+    if (!updateUrl()) return;
+    const res = await net.fetch(`${updateUrl()}/version`, { signal: AbortSignal.timeout(10000) });
+    const version = res.ok ? ((await res.json()) as { version?: unknown }).version : null;
+    if (typeof version !== 'string' || !/^\d+\.\d+\.\d+$/.test(version) || version === latestVersion) return;
+    latestVersion = version;
+    for (const w of windows) broadcast(w);
+  } catch {}
+}
 let nextId = 1;
 let nextGroupId = 1;
 let incognitoCount = 0;
@@ -132,6 +160,7 @@ function snapshot({ tabs, groups, activeTab }: Win): BrowserState {
     barLimit: BAR_LIMIT,
     groups,
     appearance: store.appearance(),
+    updateVersion: latestVersion && isNewer(latestVersion, app.getVersion()) ? latestVersion : null,
     activeId: activeTab ? activeTab.id : null,
     canGoBack: activeTab ? activeTab.view.webContents.navigationHistory.canGoBack() : false,
     canGoForward: activeTab ? activeTab.view.webContents.navigationHistory.canGoForward() : false,
@@ -156,7 +185,9 @@ function activate(w: Win, tab: Tab): void {
   w.win.contentView.addChildView(w.chrome); // keep the chrome on top so the dropdown is not hidden
   layout(w);
   broadcast(w);
-  focusAddress(w);
+  // Only an empty tab wants the address bar; on a loaded page the selection would just get in the way.
+  if (tab.url === BLANK_URL || tab.url === HOME_URL) focusAddress(w);
+  else tab.view.webContents.focus();
 }
 
 const SLEEP_AFTER_MS = 10 * 60 * 1000;
@@ -175,6 +206,7 @@ function sleepTab(w: Win, tab: Tab): void {
 
 function wake(tab: Tab): void {
   tab.sleeping = false;
+  tab.loading = false; // an event ignored while asleep must not leave the spinner on
   const wc = tab.view.webContents;
   const history = wc.navigationHistory;
   if (!history.canGoBack()) return load(wc, tab.url);
@@ -390,18 +422,32 @@ function createTab(w: Win, url: string, groupId: number | null = null): void {
   wc.on('did-navigate-in-page', (_event, _url, isMainFrame) => {
     if (isMainFrame) onNav();
   });
-  wc.on('did-start-loading', () => {
-    if (tab.sleeping) return;
+  // The spinner reflects this tab's own top-level navigation only. "did-start-loading" instead
+  // reflects the whole frame tree (every iframe, and a page's own background fetches, a kept-open
+  // WebSocket among them on some sites) and can restart long after the page itself finished
+  // loading, which used to leave the spinner turning with nowhere to stop.
+  let loadWatchdog: ReturnType<typeof setTimeout> | undefined;
+  const stopSpinner = (): void => {
+    clearTimeout(loadWatchdog);
+    if (tab.sleeping || !tab.loading) return;
+    tab.loading = false;
+    broadcast(w);
+  };
+  wc.on('did-start-navigation', (details) => {
+    if (tab.sleeping || !details.isMainFrame || details.isSameDocument) return;
     tab.loading = true;
     broadcast(w);
+    // Whatever this page's own connections do afterwards, the spinner itself waits no longer than this.
+    clearTimeout(loadWatchdog);
+    loadWatchdog = setTimeout(stopSpinner, 20000);
   });
+  wc.on('did-finish-load', stopSpinner);
   wc.on('did-stop-loading', () => {
+    stopSpinner();
     if (tab.sleeping) return;
-    tab.loading = false;
     setTimeout(() => {
       if (!wc.isDestroyed()) void capture(w, tab);
     }, 500); // give the page a moment to paint
-    broadcast(w);
   });
   wc.on('did-fail-load', (_event, code, description, validatedUrl, isMainFrame) => {
     // -3 is ERR_ABORTED, raised on every user cancel or redirect; not an error to show.
@@ -696,6 +742,41 @@ function registerIpc(): void {
     if (all || kind === 'history') clearHistory();
     return true;
   });
+  onQuery('app:version', () => app.getVersion());
+  // Updates a git checkout: pull, install new dependencies if the lock file changed, restart. Resolves to a message.
+  // A git checkout updates with git pull. Anything else downloads the ZIP from the update server with the PIN.
+  // Either way: install new packages if the lock file changed, then offer a restart. Resolves to a message.
+  onQuery('app:update', async (w, pin) => {
+    const root = app.getAppPath();
+    const sh = (cmd: string) => promisify(exec)(cmd, { cwd: root, timeout: 180000 });
+    const lockFile = path.join(root, 'package-lock.json');
+    const lock = (): string => (fs.existsSync(lockFile) ? fs.readFileSync(lockFile, 'utf8') : '');
+    try {
+      const before = lock();
+      if (fs.existsSync(path.join(root, '.git'))) {
+        const { stdout } = await sh('git pull --ff-only');
+        if (/already up to date/i.test(stdout)) return 'Already up to date';
+      } else {
+        if (!updateUrl()) return 'No update server is set (updateUrl in package.json)';
+        if (!pin) return 'Enter the PIN first';
+        const res = await net.fetch(`${updateUrl()}/download`, { method: 'POST', headers: { 'X-Pin': pin } });
+        if (res.status === 401) return 'Wrong PIN';
+        if (!res.ok) return `Download failed (${res.status})`;
+        const zip = path.join(app.getPath('temp'), 'ambaser-update.zip');
+        fs.writeFileSync(zip, Buffer.from(await res.arrayBuffer()));
+        await sh(`tar -xf "${zip}" -C "${root}" --strip-components=1`); // GitHub puts everything in one top folder
+        fs.rmSync(zip, { force: true });
+      }
+      if (lock() !== before) await sh('npm install --no-audit --no-fund');
+      const { response } = await dialog.showMessageBox(w.win, { type: 'info', message: 'Update downloaded', detail: 'Restart now to use it? Your tabs are restored.', buttons: ['Later', 'Restart'], defaultId: 1, cancelId: 0 });
+      if (response !== 1) return 'Updated. Restart to use it';
+      app.relaunch();
+      app.exit(0);
+      return 'Restarting…';
+    } catch (err) {
+      return `Update failed: ${String((err as { stderr?: string }).stderr || (err as Error).message).trim().split(/\r?\n/)[0]}`;
+    }
+  });
   onQuery('network:get', () => store.network());
   onQuery('network:set', async (_w, json) => {
     const settings = parseNetwork(JSON.parse(json));
@@ -921,6 +1002,8 @@ app.whenReady().then(async () => {
   app.dock?.setIcon(ICON);
   loadHistory();
   loadStore();
+  void checkVersion();
+  setInterval(() => void checkVersion(), 6 * 60 * 60 * 1000);
   applyAppearance();
   nativeTheme.on('updated', () => {
     if (IS_MAC) for (const w of windows) w.win.setVibrancy(glass());

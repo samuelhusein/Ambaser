@@ -3,6 +3,7 @@ import type { Appearance } from './types';
 
 export const MODES: readonly Appearance['mode'][] = ['system', 'light', 'dark'];
 export const THEMES: readonly Appearance['theme'][] = ['default', 'midnight', 'titanium', 'aurora', 'rose', 'champagne', 'emerald'];
+export const WALLPAPERS: readonly Appearance['wallpaper'][] = ['none', 'daily'];
 
 // Dark with no tint is how the app looked before there was a choice.
 export const parseAppearance = (input: unknown): Appearance => {
@@ -10,5 +11,7 @@ export const parseAppearance = (input: unknown): Appearance => {
   return {
     mode: MODES.includes(raw.mode as Appearance['mode']) ? (raw.mode as Appearance['mode']) : 'dark',
     theme: THEMES.includes(raw.theme as Appearance['theme']) ? (raw.theme as Appearance['theme']) : 'default',
+    // On by default: it is the point of asking for this feature; the toggle in Settings turns it off.
+    wallpaper: WALLPAPERS.includes(raw.wallpaper as Appearance['wallpaper']) ? (raw.wallpaper as Appearance['wallpaper']) : 'daily',
   };
 };

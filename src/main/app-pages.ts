@@ -1,10 +1,39 @@
 // The bundled home and certificate-warning pages, served on our own mybrowser: protocol.
-import { protocol, session, WebContents } from 'electron';
+import { net, protocol, session, WebContents } from 'electron';
 import * as fs from 'fs';
 import * as path from 'path';
 import { CERT_ERROR_HOST, LOAD_ERROR_HOST, normalizeInput } from '../shared/url';
 import { allHistory } from './history';
 import { store } from './store';
+
+export interface WallpaperCredit {
+  author: string;
+  url: string; // the photo's page, to credit it properly
+}
+
+// The day's photo (same for everyone, chosen by date) rarely changes within a run, so its credit
+// is fetched once per day and reused; concurrent new tabs share the one request in flight.
+let creditCache: { day: string; value: Promise<WallpaperCredit | null> } | null = null;
+
+async function fetchCredit(day: string): Promise<WallpaperCredit | null> {
+  try {
+    // A tiny request is enough: Lorem Picsum (which serves Unsplash photos) returns the chosen
+    // photo's id in a header regardless of the size asked for.
+    const tiny = await net.fetch(`https://picsum.photos/seed/${day}/16/16`, { signal: AbortSignal.timeout(4000) });
+    const id = tiny.headers.get('picsum-id');
+    if (!id) return null;
+    const info: unknown = await net.fetch(`https://picsum.photos/id/${id}/info`, { signal: AbortSignal.timeout(4000) }).then((r) => r.json());
+    const { author, url } = (info ?? {}) as Record<string, unknown>;
+    return typeof author === 'string' && typeof url === 'string' ? { author, url } : null;
+  } catch {
+    return null; // offline, blocked, or Picsum is unreachable: the photo already falls back gracefully, and so does its credit
+  }
+}
+
+function wallpaperCredit(day: string): Promise<WallpaperCredit | null> {
+  if (creditCache?.day !== day) creditCache = { day, value: fetchCredit(day) };
+  return creditCache.value;
+}
 
 const CONTENT_TYPES: Record<string, string> = { html: 'text/html', css: 'text/css', js: 'text/javascript' };
 
@@ -64,7 +93,7 @@ function serveFile(folder: string, pathname: string): Response {
 }
 
 // Read-only: any website can send requests here, so nothing served by the protocol changes anything.
-function handle(request: Request, incognito: boolean): Response {
+async function handle(request: Request, incognito: boolean): Promise<Response> {
   const url = new URL(request.url);
   if (request.method !== 'GET' || !['home', CERT_ERROR_HOST, LOAD_ERROR_HOST].includes(url.hostname)) return new Response('Not found', { status: 404 });
   if (url.hostname === 'home' && url.pathname === '/api/data') {
@@ -73,7 +102,19 @@ function handle(request: Request, incognito: boolean): Response {
     const known = new Map<string, string>();
     for (const e of [...store.pinned(), ...(incognito ? [] : allHistory())]) if (e.favicon && URL.canParse(e.url)) known.set(new URL(e.url).host, e.favicon);
     const withIcon = <T extends { url: string; favicon?: string | null }>(e: T): T => ({ ...e, favicon: e.favicon || (URL.canParse(e.url) ? known.get(new URL(e.url).host) : undefined) });
-    return Response.json({ incognito, theme: store.appearance().theme, pinned: store.pinned().map(withIcon), recent: incognito ? [] : allHistory().slice(0, 6).map(withIcon) });
+    // Decided here, not by the page's own clock, so the photo and its credit always agree on which day it is.
+    const wallpaperDay = new Date().toLocaleDateString('en-CA');
+    const { wallpaper, theme } = store.appearance();
+    const credit = wallpaper === 'daily' ? await wallpaperCredit(wallpaperDay) : null;
+    return Response.json({
+      incognito,
+      theme,
+      wallpaper,
+      wallpaperDay,
+      wallpaperCredit: credit,
+      pinned: store.pinned().map(withIcon),
+      recent: incognito ? [] : allHistory().slice(0, 6).map(withIcon),
+    });
   }
   return serveFile(url.hostname, url.pathname);
 }

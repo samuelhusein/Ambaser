@@ -29,6 +29,8 @@ const api = {
     onJamStatus: (callback) => {
         electron_1.ipcRenderer.on('jam:status', (_event, text, inRoom) => callback(text, inRoom));
     },
+    appVersion: () => electron_1.ipcRenderer.invoke('app:version', ''),
+    updateApp: (pin) => electron_1.ipcRenderer.invoke('app:update', pin),
     toggleDevTools: () => electron_1.ipcRenderer.send('page:devtools'),
     togglePin: () => electron_1.ipcRenderer.send('pin:toggle'),
     onShowHistory: (callback) => {
