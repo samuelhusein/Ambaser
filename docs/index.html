@@ -24,7 +24,7 @@
     <img src="icon.png" alt="">
     <h1>Ambaser <small id="version"></small></h1>
     <p>Browser buatan sendiri berbasis Electron, dengan fitur Jam untuk nonton dan dengar bareng teman.</p>
-    <a class="btn" href="https://github.com/samuelhusein/Ambaser/archive/refs/heads/main.zip">Download ZIP</a>
+    <a id="download" class="btn" href="https://github.com/samuelhusein/Ambaser/archive/refs/heads/main.zip">Download ZIP</a>
     <p><small>Kode sumber dari branch <code>main</code> · <a href="https://github.com/samuelhusein/Ambaser">GitHub</a></small></p>
     <ol>
       <li>Install <a href="https://nodejs.org">Node.js</a>, lalu ekstrak ZIP.</li>
@@ -35,7 +35,13 @@
   <script>
     fetch("https://raw.githubusercontent.com/samuelhusein/Ambaser/main/package.json?t="+Date.now(), { cache: "no-store" })
       .then((r) => r.json())
-      .then((p) => (document.getElementById("version").textContent = "v" + p.version))
+      .then((p) => {
+        // The tag is made for every version, so the ZIP is exactly the version shown.
+        document.getElementById("version").textContent = "v" + p.version;
+        const button = document.getElementById("download");
+        button.textContent = "Download ZIP v" + p.version;
+        button.href = "https://github.com/samuelhusein/Ambaser/archive/refs/tags/v" + p.version + ".zip";
+      })
       .catch(() => {});
   </script>
 </body>
