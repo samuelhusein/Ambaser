@@ -35,7 +35,10 @@
       <button id="downloads-btn" class="icon-btn" title="Downloads" data-icon="download"></button>
       <button id="settings-btn" class="icon-btn" title="Settings" data-icon="sliders"></button>
     </div>
-    <div id="favorites" class="favorites"></div>
+    <div class="favorites-row">
+      <div id="favorites" class="favorites"></div>
+      <button id="favorites-btn" class="icon-btn" title="Manage favorites" data-icon="folder"></button>
+    </div>
   </div>
   <div id="dropdown" class="dropdown" hidden></div>
   <div id="downloads" class="downloads" hidden></div>
@@ -47,6 +50,7 @@
     <p id="site-note" class="note" role="status"></p>
     <button id="site-reload" class="text-btn" hidden>Reload page</button>
   </div>
+  <div id="favmenu" class="downloads favmenu" hidden></div>
   <div id="find" class="find" hidden>
     <input id="find-text" class="field" type="text" spellcheck="false" autocomplete="off" placeholder="Find in page">
     <span id="find-count" class="find-count"></span>

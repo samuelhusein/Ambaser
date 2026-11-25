@@ -22,6 +22,8 @@ const el = {
     overflow: document.getElementById('tab-overflow'),
     favoritesList: document.getElementById('favorites-list'),
     favorites: document.getElementById('favorites'),
+    favmenu: document.getElementById('favmenu'),
+    favoritesButton: document.getElementById('favorites-btn'),
     dropdown: document.getElementById('dropdown'),
     editor: document.getElementById('group-editor'),
     groupName: document.getElementById('group-name'),
@@ -410,6 +412,64 @@ function splitTabs(state) {
 el.overflow.addEventListener('click', () => api.tabOverflow(hiddenIds));
 window.addEventListener('resize', () => lastState && render(lastState));
 let favorites = [];
+let barLimit = 8;
+// The folder button lists every favorite and lets you choose which ones the bar shows.
+function drawFavmenu() {
+    if (el.favmenu.hidden)
+        return;
+    const shown = favorites.filter((s) => s.bar).length;
+    const rows = favorites.map((site) => {
+        const row = document.createElement('div');
+        row.className = 'row';
+        row.addEventListener('click', () => {
+            closeFavmenu();
+            api.navigate(site.url);
+        });
+        const text = span('row-text', site.title || site.url);
+        text.append(span('row-url', site.url));
+        const toggle = document.createElement('button');
+        toggle.className = site.bar ? 'small-btn on' : 'small-btn';
+        toggle.title = site.bar ? 'Hide from the bar' : shown >= barLimit ? `The bar is full (${barLimit})` : 'Show in the bar';
+        toggle.disabled = !site.bar && shown >= barLimit;
+        toggle.append(icon('star'));
+        toggle.addEventListener('click', (event) => {
+            event.stopPropagation();
+            api.setFavoriteBar(site.url, !site.bar);
+        });
+        row.append(site.favicon ? favicon(`menu${site.url}`, site.favicon, '') : icon('globe'), text, toggle);
+        return row;
+    });
+    const note = span('history-empty', favorites.length ? `${shown} of ${barLimit} shown in the bar` : 'No favorites yet');
+    el.favmenu.replaceChildren(...rows, note);
+    resizeChrome();
+}
+function closeFavmenu() {
+    if (el.favmenu.hidden)
+        return;
+    el.favmenu.hidden = true;
+    resizeChrome();
+}
+el.favoritesButton.addEventListener('click', () => {
+    if (!el.favmenu.hidden)
+        return closeFavmenu();
+    closePanel();
+    closeEditor();
+    closeDropdown();
+    closeDownloads();
+    hidePreview();
+    el.favmenu.hidden = false;
+    drawFavmenu();
+});
+document.addEventListener('mousedown', (event) => {
+    const target = event.target;
+    if (!el.favmenu.contains(target) && !el.favoritesButton.contains(target))
+        closeFavmenu();
+});
+document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape')
+        closeFavmenu();
+});
+window.addEventListener('blur', closeFavmenu);
 function drawFavoritesSettings() {
     el.favoritesList.replaceChildren(...(favorites.length
         ? favorites.map((site) => {
@@ -428,6 +488,8 @@ function render(state) {
     lastState = state;
     favorites = state.favorites;
     drawFavoritesSettings();
+    barLimit = state.barLimit;
+    drawFavmenu();
     const { shown, hidden } = splitTabs(state);
     hiddenIds = hidden.map((t) => t.id);
     el.overflow.hidden = hidden.length === 0;
@@ -446,7 +508,8 @@ function render(state) {
     el.forward.disabled = !state.canGoForward;
     el.pin.classList.toggle('pinned', state.isActivePinned);
     el.pin.title = state.isActivePinned ? 'Unpin this page' : 'Pin this page';
-    el.favorites.replaceChildren(...(state.favorites.length ? state.favorites.map(favoriteButton) : [span('favorites-empty', 'Pin pages with the star to keep them here')]));
+    const barSites = state.favorites.filter((s) => s.bar);
+    el.favorites.replaceChildren(...(barSites.length ? barSites.map(favoriteButton) : [span('favorites-empty', state.favorites.length ? 'Choose favorites to show with the folder button' : 'Pin pages with the star to keep them here')]));
     const current = state.tabs.find((t) => t.id === state.activeId)?.url ?? '';
     const web = /^https?:/.test(current);
     const insecure = current.startsWith('http:');
@@ -617,7 +680,8 @@ function resizeChrome() {
     const preview = el.preview.hidden ? 0 : Math.ceil(el.preview.getBoundingClientRect().bottom) + 16;
     const find = el.find.hidden ? 0 : Math.ceil(el.find.getBoundingClientRect().bottom) + 16;
     const downloads = el.downloads.hidden ? 0 : Math.ceil(el.downloads.getBoundingClientRect().bottom) + 16;
-    api.setDropdownHeight(panelOpen() ? 100000 : Math.max(dropdown, editor, preview, find, site, downloads));
+    const favmenu = el.favmenu.hidden ? 0 : Math.ceil(el.favmenu.getBoundingClientRect().bottom) + 16;
+    api.setDropdownHeight(panelOpen() ? 100000 : Math.max(dropdown, editor, preview, find, site, downloads, favmenu));
 }
 function drawDropdown() {
     el.dropdown.replaceChildren(...items.map(suggestionElement));
@@ -885,6 +949,7 @@ el.downloadsButton.addEventListener('click', () => {
     closePanel();
     closeEditor();
     closeDropdown();
+    closeFavmenu();
     hidePreview();
     el.downloads.hidden = false;
     drawDownloads();

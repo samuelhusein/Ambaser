@@ -3,7 +3,7 @@ import * as path from 'path';
 import { BLANK_URL, HOME_URL, certErrorUrl, displayUrl, isAllowedUrl, isAppUrl, loadErrorUrl, normalizeInput, unreadCount, withoutUnread } from '../shared/url';
 import { forgetCertificate, forgetCertificates, hasAcceptedCertificate, isTrusted, registerPages, registerScheme, runPageAction } from './app-pages';
 import { applyDns, applyProxy } from './network';
-import { loadStore, store, SavedTab } from './store';
+import { BAR_LIMIT, loadStore, store, SavedTab } from './store';
 import { allowsNotifications, guardPermissions, resetPermissions, setSitePermission, sitePermissions } from './permissions';
 import { isExternal, openExternal, showContextMenu, watchDownloads } from './web-features';
 import { parseNetwork } from '../shared/network';
@@ -125,7 +125,9 @@ function snapshot({ tabs, groups, activeTab }: Win): BrowserState {
       title: withoutUnread(site.title),
       favicon: site.favicon ?? tabs.find((t) => hostOf(t.url) === hostOf(site.url))?.favicon ?? null,
       unread: unread.get(hostOf(site.url)) ?? 0,
+      bar: site.bar,
     })),
+    barLimit: BAR_LIMIT,
     groups,
     appearance: store.appearance(),
     activeId: activeTab ? activeTab.id : null,
@@ -528,6 +530,11 @@ function registerIpc(): void {
   onCommand('tab:new', (w, url) => {
     const target = typeof url === 'string' ? normalizeInput(url) : null;
     createTab(w, target ?? HOME_URL);
+  });
+  onCommand('pin:bar', (_w, url, on) => {
+    if (typeof url !== 'string' || typeof on !== 'boolean') return;
+    store.setBar(url, on);
+    for (const win of windows) broadcast(win);
   });
   onCommand('pin:remove', (_w, url) => {
     if (typeof url !== 'string') return;

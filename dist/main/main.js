@@ -121,7 +121,9 @@ function snapshot({ tabs, groups, activeTab }) {
             title: (0, url_1.withoutUnread)(site.title),
             favicon: site.favicon ?? tabs.find((t) => hostOf(t.url) === hostOf(site.url))?.favicon ?? null,
             unread: unread.get(hostOf(site.url)) ?? 0,
+            bar: site.bar,
         })),
+        barLimit: store_1.BAR_LIMIT,
         groups,
         appearance: store_1.store.appearance(),
         activeId: activeTab ? activeTab.id : null,
@@ -545,6 +547,13 @@ function registerIpc() {
     onCommand('tab:new', (w, url) => {
         const target = typeof url === 'string' ? (0, url_1.normalizeInput)(url) : null;
         createTab(w, target ?? url_1.HOME_URL);
+    });
+    onCommand('pin:bar', (_w, url, on) => {
+        if (typeof url !== 'string' || typeof on !== 'boolean')
+            return;
+        store_1.store.setBar(url, on);
+        for (const win of windows)
+            broadcast(win);
     });
     onCommand('pin:remove', (_w, url) => {
         if (typeof url !== 'string')

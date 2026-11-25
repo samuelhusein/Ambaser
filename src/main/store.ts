@@ -11,7 +11,10 @@ export interface SiteEntry {
   url: string;
   title: string;
   favicon: string | null;
+  bar?: boolean; // shown in the favorites bar
 }
+
+export const BAR_LIMIT = 8;
 
 // A tab as it was when its window closed.
 export interface SavedTab extends SiteEntry {
@@ -28,6 +31,8 @@ interface StoreData {
   permissions: Record<string, boolean>; // "origin kind" -> allowed
   certificates: Record<string, string>; // host -> fingerprint of the bad certificate the user accepted
 }
+
+const barCount = (): number => data.pinned.filter((s) => s.bar).length;
 
 let data: StoreData = { pinned: [], lastSession: [], lastGroups: [], network: DEFAULT_NETWORK, appearance: parseAppearance(null), permissions: {}, certificates: {} };
 const file = (): string => path.join(app.getPath('userData'), 'browser-data.json');
@@ -46,6 +51,9 @@ export function loadStore(): void {
     const parsed = JSON.parse(fs.readFileSync(file(), 'utf8'));
     const network = parseNetwork(parsed?.network);
     data = { pinned: sites(parsed?.pinned), lastSession: sites(parsed?.lastSession), lastGroups: Array.isArray(parsed?.lastGroups) ? parsed.lastGroups : [], network: typeof network === 'string' ? DEFAULT_NETWORK : network, permissions: answers(parsed?.permissions), certificates: strings(parsed?.certificates), appearance: parseAppearance(parsed?.appearance) };
+    // Favorites saved before the bar had a limit: the first ones are shown.
+    let shown = data.pinned.filter((s) => s.bar === true).length;
+    for (const site of data.pinned) if (typeof site.bar !== 'boolean') site.bar = shown < BAR_LIMIT && ++shown > 0;
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code !== 'ENOENT') console.error(`store load: ${(err as Error).message}`);
   }
@@ -103,9 +111,17 @@ export const store = {
   togglePin(entry: SiteEntry): void {
     if (store.isPinned(entry.url)) store.unpin(entry.url);
     else {
-      data.pinned.push(entry);
+      data.pinned.push({ ...entry, bar: barCount() < BAR_LIMIT });
       save();
     }
+  },
+  // Returns false when the bar is full.
+  setBar(url: string, on: boolean): boolean {
+    const site = data.pinned.find((s) => s.url === url);
+    if (!site || (on && !site.bar && barCount() >= BAR_LIMIT)) return false;
+    site.bar = on;
+    save();
+    return true;
   },
   unpin(url: string): void {
     data.pinned = data.pinned.filter((s) => s.url !== url);

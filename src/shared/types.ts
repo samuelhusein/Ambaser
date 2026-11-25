@@ -31,7 +31,8 @@ export interface BrowserState {
   canGoBack: boolean;
   canGoForward: boolean;
   isActivePinned: boolean;
-  favorites: { url: string; title: string; favicon: string | null; unread: number }[]; // pinned sites
+  favorites: { url: string; title: string; favicon: string | null; unread: number; bar?: boolean }[]; // pinned sites
+  barLimit: number; // most favorites the bar can show
 }
 
 export interface Appearance {
@@ -84,6 +85,7 @@ export interface DownloadInfo {
 }
 
 export interface BrowserApi {
+  setFavoriteBar(url: string, on: boolean): void;
   unpin(url: string): void;
   tabOverflow(ids: number[]): void;
   listDownloads(): Promise<DownloadInfo[]>;

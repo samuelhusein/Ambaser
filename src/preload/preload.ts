@@ -19,6 +19,7 @@ const api: BrowserApi = {
     ipcRenderer.on('downloads:update', (_event, list: DownloadInfo[]) => callback(list));
   },
   downloadAction: (id: number, action: string) => ipcRenderer.send('downloads:action', id, action),
+  setFavoriteBar: (url: string, on: boolean) => ipcRenderer.send('pin:bar', url, on),
   unpin: (url: string) => ipcRenderer.send('pin:remove', url),
   tabOverflow: (ids: number[]) => ipcRenderer.send('tabs:overflow', ids),
   newIncognito: () => ipcRenderer.send('window:incognito'),

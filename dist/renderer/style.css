@@ -62,7 +62,9 @@ svg {
 button, input { font: inherit; color: var(--fg); }
 
 .chrome { height: 120px; display: flex; flex-direction: column; background: var(--wash); }
-.favorites { display: flex; align-items: center; justify-content: safe center; gap: 2px; height: 36px; padding: 0 var(--edge) 4px; overflow-x: auto; background: var(--joined); }
+.favorites-row { display: flex; align-items: center; height: 36px; padding-bottom: 4px; padding-right: var(--edge); background: var(--joined); }
+.favorites-row .icon-btn { flex: none; width: 24px; height: 24px; }
+.favorites { flex: 1; min-width: 0; display: flex; align-items: center; justify-content: safe center; gap: 2px; height: 100%; padding: 0 var(--edge); overflow-x: auto; }
 .favorites::-webkit-scrollbar { display: none; }
 .favorite { flex: none; display: flex; align-items: center; gap: 7px; max-width: 168px; height: 26px; padding: 0 10px 0 6px; border: 0; border-radius: 8px; background: transparent; color: var(--fg); font-size: 12px; font-weight: 500; letter-spacing: -0.005em; transition: background-color 0.15s; }
 .favorite:hover { background: var(--hover); }
@@ -286,6 +288,10 @@ body.incognito .chrome, body.mac.incognito .chrome { background: linear-gradient
 .section[hidden] { display: none; }
 .downloads { position: absolute; top: 80px; right: var(--edge); display: flex; flex-direction: column; gap: var(--gap); width: 380px; max-height: 360px; overflow-y: auto; padding: var(--gap); border: 1px solid var(--line); border-radius: 14px; background: var(--popup); box-shadow: var(--shine), 0 8px 24px rgba(0, 0, 0, 0.35); }
 .downloads[hidden] { display: none; }
+.favmenu { top: 108px; }
+.favmenu .row { cursor: pointer; }
+.favmenu .small-btn.on { color: var(--accent); }
+.favmenu .small-btn.on svg { fill: currentColor; }
 .download { height: auto; min-height: 44px; padding: 6px; cursor: default; }
 .download-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
 .download-body .row-text { display: block; flex: none; }

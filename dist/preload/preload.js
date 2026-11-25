@@ -19,6 +19,7 @@ const api = {
         electron_1.ipcRenderer.on('downloads:update', (_event, list) => callback(list));
     },
     downloadAction: (id, action) => electron_1.ipcRenderer.send('downloads:action', id, action),
+    setFavoriteBar: (url, on) => electron_1.ipcRenderer.send('pin:bar', url, on),
     unpin: (url) => electron_1.ipcRenderer.send('pin:remove', url),
     tabOverflow: (ids) => electron_1.ipcRenderer.send('tabs:overflow', ids),
     newIncognito: () => electron_1.ipcRenderer.send('window:incognito'),

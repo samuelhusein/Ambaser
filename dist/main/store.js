@@ -33,7 +33,7 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.store = void 0;
+exports.store = exports.BAR_LIMIT = void 0;
 exports.loadStore = loadStore;
 // Pinned sites and the last session's tabs, mirrored to a JSON file in the app's userData folder.
 // History lives in history.ts.
@@ -42,6 +42,8 @@ const fs = __importStar(require("fs"));
 const path = __importStar(require("path"));
 const appearance_1 = require("../shared/appearance");
 const network_1 = require("../shared/network");
+exports.BAR_LIMIT = 8;
+const barCount = () => data.pinned.filter((s) => s.bar).length;
 let data = { pinned: [], lastSession: [], lastGroups: [], network: network_1.DEFAULT_NETWORK, appearance: (0, appearance_1.parseAppearance)(null), permissions: {}, certificates: {} };
 const file = () => path.join(electron_1.app.getPath('userData'), 'browser-data.json');
 const sites = (list) => Array.isArray(list) ? list.filter((e) => typeof e?.url === 'string' && typeof e?.title === 'string') : [];
@@ -52,6 +54,11 @@ function loadStore() {
         const parsed = JSON.parse(fs.readFileSync(file(), 'utf8'));
         const network = (0, network_1.parseNetwork)(parsed?.network);
         data = { pinned: sites(parsed?.pinned), lastSession: sites(parsed?.lastSession), lastGroups: Array.isArray(parsed?.lastGroups) ? parsed.lastGroups : [], network: typeof network === 'string' ? network_1.DEFAULT_NETWORK : network, permissions: answers(parsed?.permissions), certificates: strings(parsed?.certificates), appearance: (0, appearance_1.parseAppearance)(parsed?.appearance) };
+        // Favorites saved before the bar had a limit: the first ones are shown.
+        let shown = data.pinned.filter((s) => s.bar === true).length;
+        for (const site of data.pinned)
+            if (typeof site.bar !== 'boolean')
+                site.bar = shown < exports.BAR_LIMIT && ++shown > 0;
     }
     catch (err) {
         if (err.code !== 'ENOENT')
@@ -111,9 +118,18 @@ exports.store = {
         if (exports.store.isPinned(entry.url))
             exports.store.unpin(entry.url);
         else {
-            data.pinned.push(entry);
+            data.pinned.push({ ...entry, bar: barCount() < exports.BAR_LIMIT });
             save();
         }
+    },
+    // Returns false when the bar is full.
+    setBar(url, on) {
+        const site = data.pinned.find((s) => s.url === url);
+        if (!site || (on && !site.bar && barCount() >= exports.BAR_LIMIT))
+            return false;
+        site.bar = on;
+        save();
+        return true;
     },
     unpin(url) {
         data.pinned = data.pinned.filter((s) => s.url !== url);
