@@ -1,0 +1,748 @@
+// Deliberately not a module (no top-level import/export): the compiled file is loaded by a plain <script>,
+// where the CommonJS `exports` object does not exist. Types come from inline import() expressions.
+type BrowserApi = import('../shared/types').BrowserApi;
+type BrowserState = import('../shared/types').BrowserState;
+type TabState = import('../shared/types').TabState;
+type TabDrop = import('../shared/types').TabDrop;
+type GroupState = import('../shared/types').GroupState;
+type GroupColor = import('../shared/types').GroupColor;
+type GroupIcon = import('../shared/types').GroupIcon;
+type HistoryEntry = import('../shared/types').HistoryEntry;
+
+interface Suggestion {
+  icon: IconName;
+  text: string; // shown in the list and put in the address bar when selected
+  detail: string;
+  url: string; // what to open
+  fromHistory: boolean;
+}
+
+// The page talks to main only through window.browser.
+const api = (window as unknown as { browser: BrowserApi }).browser;
+
+const el = {
+  tabs: document.getElementById('tabs') as HTMLDivElement,
+  newTab: document.getElementById('new-tab') as HTMLButtonElement,
+  back: document.getElementById('back') as HTMLButtonElement,
+  forward: document.getElementById('forward') as HTMLButtonElement,
+  home: document.getElementById('home') as HTMLButtonElement,
+  pin: document.getElementById('pin') as HTMLButtonElement,
+  incognitoBadge: document.getElementById('incognito-badge') as HTMLSpanElement,
+  reload: document.getElementById('reload') as HTMLButtonElement,
+  address: document.getElementById('address') as HTMLInputElement,
+  favorites: document.getElementById('favorites') as HTMLDivElement,
+  dropdown: document.getElementById('dropdown') as HTMLDivElement,
+  editor: document.getElementById('group-editor') as HTMLDivElement,
+  groupName: document.getElementById('group-name') as HTMLInputElement,
+  groupColors: document.getElementById('group-colors') as HTMLDivElement,
+  groupIcons: document.getElementById('group-icons') as HTMLDivElement,
+  ungroup: document.getElementById('group-ungroup') as HTMLButtonElement,
+  closeGroup: document.getElementById('group-close') as HTMLButtonElement,
+  preview: document.getElementById('preview') as HTMLDivElement,
+  previewImage: document.getElementById('preview-image') as HTMLImageElement,
+  previewTitle: document.getElementById('preview-title') as HTMLDivElement,
+  previewUrl: document.getElementById('preview-url') as HTMLDivElement,
+  find: document.getElementById('find') as HTMLDivElement,
+  findText: document.getElementById('find-text') as HTMLInputElement,
+  findCount: document.getElementById('find-count') as HTMLSpanElement,
+  findPrev: document.getElementById('find-prev') as HTMLButtonElement,
+  findNext: document.getElementById('find-next') as HTMLButtonElement,
+  findClose: document.getElementById('find-close') as HTMLButtonElement,
+  settings: document.getElementById('settings-panel') as HTMLDivElement,
+  settingsButton: document.getElementById('settings-btn') as HTMLButtonElement,
+  settingsForm: document.getElementById('settings-form') as HTMLFormElement,
+  settingsClose: document.getElementById('settings-close') as HTMLButtonElement,
+  settingsStatus: document.getElementById('settings-status') as HTMLSpanElement,
+  proxyMode: document.getElementById('proxy-mode') as HTMLSelectElement,
+  proxyServer: document.getElementById('proxy-server') as HTMLInputElement,
+  proxyBypass: document.getElementById('proxy-bypass') as HTMLInputElement,
+  dnsMode: document.getElementById('dns-mode') as HTMLSelectElement,
+  dnsUrl: document.getElementById('dns-url') as HTMLInputElement,
+  historyButton: document.getElementById('history-btn') as HTMLButtonElement,
+  panel: document.getElementById('history-panel') as HTMLDivElement,
+  historyClear: document.getElementById('history-clear') as HTMLButtonElement,
+  historyClose: document.getElementById('history-close') as HTMLButtonElement,
+  historyFilter: document.getElementById('history-filter') as HTMLInputElement,
+  historyList: document.getElementById('history-list') as HTMLDivElement,
+};
+
+// 24x24 line icons, drawn with the current text colour (see the svg rule in style.css).
+const ICONS = {
+  back: 'M19 12H5M11 6l-6 6 6 6',
+  forward: 'M5 12h14M13 6l6 6-6 6',
+  reload: 'M20 12a8 8 0 1 1-2.34-5.66L20 8.5M20 4v4.5h-4.5',
+  plus: 'M12 5v14M5 12h14',
+  close: 'M6 6l12 12M18 6L6 18',
+  clock: 'M12 3a9 9 0 1 0 0 18a9 9 0 1 0 0-18M12 7v5l3 2',
+  search: 'M11 4a7 7 0 1 0 0 14a7 7 0 1 0 0-14M20 20l-4-4',
+  globe: 'M12 3a9 9 0 1 0 0 18a9 9 0 1 0 0-18M3 12h18M12 3c-5 5-5 13 0 18c5-5 5-13 0-18',
+  none: 'M6 18L18 6',
+  minus: 'M5 12h14',
+  sliders: 'M4 7h10M18 7h2M16 5v4M4 17h2M10 17h10M8 15v4',
+  home: 'M4 11l8-7l8 7M6 10v10h12V10',
+  expand: 'M7 17L17 7M9 7h8v8M15 17H7V9',
+  star: 'M12 3l2.7 5.6l6.1.8l-4.5 4.2l1.1 6.1L12 16.8l-5.4 2.9l1.1-6.1l-4.5-4.2l6.1-.8z',
+  briefcase: 'M4 8h16v11H4zM9 8V5h6v3M4 13h16',
+  book: 'M12 6c-2-1.5-5-1.5-8 0v13c3-1.5 6-1.5 8 0c2-1.5 5-1.5 8 0V6c-3-1.5-6-1.5-8 0zM12 6v13',
+  code: 'M8 8l-4 4l4 4M16 8l4 4l-4 4',
+  incognito: 'M3 12h18M6 12l2-7h8l2 7M7.5 20a2.5 2.5 0 1 0 0-5a2.5 2.5 0 1 0 0 5M16.5 20a2.5 2.5 0 1 0 0-5a2.5 2.5 0 1 0 0 5',
+  play: 'M8 5l11 7l-11 7z',
+  cart: 'M3 4h2l2.5 11h10L20 7H6M9 19h.01M17 19h.01',
+  heart: 'M12 20s-8-4.7-8-10.5A4.5 4.5 0 0 1 12 7a4.5 4.5 0 0 1 8 2.5C20 15.3 12 20 12 20z',
+};
+type IconName = keyof typeof ICONS;
+
+function icon(name: IconName): SVGSVGElement {
+  const ns = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(ns, 'svg');
+  svg.setAttribute('viewBox', '0 0 24 24');
+  const path = document.createElementNS(ns, 'path');
+  path.setAttribute('d', ICONS[name]);
+  svg.append(path);
+  return svg;
+}
+
+for (const button of document.querySelectorAll<HTMLButtonElement>('button[data-icon]')) {
+  button.append(icon(button.dataset.icon as IconName));
+}
+
+if (api.isMac) {
+  document.body.classList.add('mac');
+  (document.getElementById('window-buttons') as HTMLDivElement).hidden = false;
+  for (const button of document.querySelectorAll<HTMLButtonElement>('button[data-window]')) {
+    button.addEventListener('click', () => api.windowAction(button.dataset.window as import('../shared/types').WindowAction));
+  }
+}
+
+if (new URLSearchParams(location.search).has('incognito')) {
+  el.incognitoBadge.hidden = false;
+  document.body.classList.add('incognito');
+}
+
+// Duplicated from shared/url.ts: this plain script cannot import at runtime.
+const HOME_URL = 'mybrowser://home/';
+const isBlank = (url: string): boolean => url === 'about:blank' || url === HOME_URL;
+
+function removeButton(title: string, action: () => void): HTMLButtonElement {
+  const button = document.createElement('button');
+  button.className = 'small-btn';
+  button.title = title;
+  button.append(icon('close'));
+  button.addEventListener('click', (event) => {
+    event.stopPropagation(); // the row behind has its own click
+    action();
+  });
+  return button;
+}
+
+let hoverId: number | null = null; // tab under the pointer
+let clickedId: number | null = null; // no preview again for a tab just clicked, until the pointer moves on
+let hoverTimer = 0;
+
+function hidePreview(): void {
+  clearTimeout(hoverTimer);
+  hoverId = null;
+  if (el.preview.hidden) return;
+  el.preview.hidden = true;
+  resizeChrome();
+}
+
+async function showPreview(tab: TabState): Promise<void> {
+  const image = await api.previewTab(tab.id);
+  const row = el.tabs.querySelector<HTMLElement>(`[data-tab="${tab.id}"]`);
+  // The pointer may have moved on, or something else may be open.
+  if (hoverId !== tab.id || !row || row.classList.contains('active') || panelOpen() || !el.editor.hidden || items.length) return;
+  el.previewImage.hidden = !image;
+  if (image) el.previewImage.src = image;
+  el.previewTitle.textContent = tab.title || tab.url;
+  el.previewUrl.textContent = isBlank(tab.url) ? '' : tab.url;
+  el.preview.hidden = false;
+  el.preview.style.left = `${Math.max(8, Math.min(row.getBoundingClientRect().left, window.innerWidth - 264))}px`;
+  resizeChrome();
+}
+
+function hoverTab(tab: TabState): void {
+  if (hoverId === tab.id || clickedId === tab.id) return;
+  clickedId = null;
+  clearTimeout(hoverTimer);
+  hoverId = tab.id;
+  // Wait before the first preview; moving along the tabs then switches at once.
+  hoverTimer = window.setTimeout(() => void showPreview(tab), el.preview.hidden ? 400 : 0);
+}
+
+// The tab strip is rebuilt on every state change. Reusing the same <img> keeps icons from reloading (flicker).
+const faviconCache = new Map<string, HTMLImageElement>();
+const brokenIcons = new Set<string>();
+
+function favicon(key: string, src: string, className: string): Node {
+  if (brokenIcons.has(src)) return icon('globe');
+  const id = `${key}|${src}`;
+  let image = faviconCache.get(id);
+  if (!image) {
+    const created = document.createElement('img');
+    created.className = className;
+    created.src = src;
+    created.alt = '';
+    created.addEventListener('error', () => {
+      brokenIcons.add(src);
+      faviconCache.delete(id);
+      created.replaceWith(icon('globe'));
+    });
+    faviconCache.set(id, (image = created));
+  }
+  return image;
+}
+
+const DRAG_TYPE ='application/x-tab';
+let draggedId: number | null = null;
+
+function clearDropMarks(): void {
+  for (const node of document.querySelectorAll('.drop-before, .drop-after, .drop-into')) {
+    node.classList.remove('drop-before', 'drop-after', 'drop-into');
+  }
+}
+
+// Makes an element accept dragged tabs. locate() turns the pointer position into a drop, or null to refuse.
+function dropTarget(node: HTMLElement, locate: (event: DragEvent) => TabDrop | null): void {
+  node.addEventListener('dragover', (event) => {
+    const drop = event.dataTransfer?.types.includes(DRAG_TYPE) ? locate(event) : null;
+    clearDropMarks();
+    if (!drop) return;
+    event.preventDefault();
+    node.classList.add(drop.kind === 'before' ? 'drop-before' : drop.kind === 'after' ? 'drop-after' : 'drop-into');
+  });
+  node.addEventListener('dragleave', clearDropMarks);
+  node.addEventListener('drop', (event) => {
+    const id = Number(event.dataTransfer?.getData(DRAG_TYPE));
+    const drop = locate(event);
+    clearDropMarks();
+    if (!id || !drop) return;
+    event.preventDefault();
+    api.dropTab(id, drop);
+  });
+}
+
+// Edges reorder. The middle of a loose tab, dragged onto from another tab, groups the two.
+function overTab(tab: TabState, node: HTMLElement, event: DragEvent): TabDrop | null {
+  if (tab.id === draggedId) return null;
+  const box = node.getBoundingClientRect();
+  const x = (event.clientX - box.left) / box.width;
+  if (tab.groupId === null && x > 0.3 && x < 0.7) return { kind: 'merge', tabId: tab.id };
+  return { kind: x < 0.5 ? 'before' : 'after', tabId: tab.id };
+}
+
+function tabElement(tab: TabState, active: boolean): HTMLDivElement {
+  const row = document.createElement('div');
+  row.className = (active ? 'tab active' : 'tab') + (tab.sleeping ? ' sleeping' : '');
+  row.dataset.tab = String(tab.id);
+  // The active tab is already on screen, so it gets no preview.
+  row.addEventListener('mouseenter', () => (active ? hidePreview() : hoverTab(tab)));
+  row.addEventListener('mouseleave', () => {
+    clickedId = null;
+    hidePreview();
+  });
+  row.addEventListener('mousedown', () => {
+    clickedId = tab.id;
+    hidePreview();
+  });
+  row.addEventListener('contextmenu', () => api.tabMenu(tab.id));
+  row.draggable = true;
+  row.addEventListener('dragstart', (event) => {
+    draggedId = tab.id;
+    event.dataTransfer?.setData(DRAG_TYPE, String(tab.id));
+  });
+  row.addEventListener('dragend', clearDropMarks);
+  dropTarget(row, (event) => overTab(tab, row, event));
+  row.addEventListener('click', () => {
+    closePanel();
+    api.activateTab(tab.id);
+  });
+
+  if (tab.loading) {
+    const spinner = document.createElement('span');
+    spinner.className = 'tab-spinner';
+    row.append(spinner);
+  } else if (tab.favicon) {
+    row.append(favicon(`tab${tab.id}`, tab.favicon, 'tab-favicon'));
+  } else {
+    row.append(icon('globe'));
+  }
+
+  const title = document.createElement('span');
+  title.className = 'tab-title';
+  title.textContent = tab.title || tab.url;
+  row.append(title);
+
+  row.append(removeButton('Close tab', () => api.closeTab(tab.id)));
+  return row;
+}
+
+let groups: GroupState[] = [];
+let activeId: number | null = null;
+let edited = false; // the user has typed in the address bar
+let editing: number | null = null; // id of the group open in the editor
+const chips = new Map<number, HTMLButtonElement>();
+
+function groupChip(group: GroupState): HTMLButtonElement {
+  const chip = document.createElement('button');
+  chip.className = `group-chip c-${group.color}${group.collapsed ? ' collapsed' : ''}`;
+  chip.title = 'Click to collapse or expand, right-click to edit';
+  if (group.icon !== 'none') chip.append(icon(group.icon));
+  if (group.name) chip.append(span('', group.name));
+  chip.addEventListener('click', () => api.updateGroup(group.id, { collapsed: !group.collapsed }));
+  chip.addEventListener('contextmenu', () => openEditor(group.id));
+  dropTarget(chip, () => ({ kind: 'group', groupId: group.id }));
+  chips.set(group.id, chip);
+  return chip;
+}
+
+// A group's tabs are next to each other, so its chip goes before the first one.
+function tabStrip(state: BrowserState): HTMLElement[] {
+  chips.clear();
+  return state.tabs.flatMap((tab) => {
+    const active = tab.id === state.activeId;
+    const group = state.groups.find((g) => g.id === tab.groupId);
+    if (!group) return [tabElement(tab, active)];
+    const parts: HTMLElement[] = chips.has(group.id) ? [] : [groupChip(group)];
+    // A collapsed group still shows the tab being viewed.
+    if (!group.collapsed || active) {
+      const row = tabElement(tab, active);
+      row.classList.add('grouped', `c-${group.color}`);
+      parts.push(row);
+    }
+    return parts;
+  });
+}
+
+function choice(label: string, selected: boolean, content: Node, pick: () => void): HTMLButtonElement {
+  const button = document.createElement('button');
+  button.className = selected ? 'choice selected' : 'choice';
+  button.title = label;
+  button.append(content);
+  button.addEventListener('click', pick);
+  return button;
+}
+
+function drawChoices(color: GroupColor, current: GroupIcon): void {
+  const colors: GroupColor[] = ['grey', 'blue', 'red', 'yellow', 'green', 'pink', 'purple', 'cyan'];
+  const icons: GroupIcon[] = ['none', 'star', 'briefcase', 'book', 'code', 'play', 'cart', 'heart'];
+  const pick = (patch: Partial<GroupState>): void => {
+    if (editing === null) return;
+    api.updateGroup(editing, patch);
+    drawChoices(patch.color ?? color, patch.icon ?? current);
+  };
+  el.groupColors.replaceChildren(...colors.map((c) => choice(c, c === color, span(`dot c-${c}`, ''), () => pick({ color: c }))));
+  el.groupIcons.replaceChildren(...icons.map((i) => choice(i, i === current, icon(i), () => pick({ icon: i }))));
+}
+
+function openEditor(id: number): void {
+  const group = groups.find((g) => g.id === id);
+  const chip = chips.get(id);
+  if (!group || !chip) return;
+  closePanel();
+  hidePreview();
+  el.address.blur();
+  editing = id;
+  el.editor.hidden = false;
+  el.editor.style.left = `${Math.max(8, Math.min(chip.getBoundingClientRect().left, window.innerWidth - 264))}px`;
+  el.groupName.value = group.name;
+  drawChoices(group.color, group.icon);
+  resizeChrome();
+  el.groupName.focus();
+}
+
+function closeEditor(): void {
+  if (el.editor.hidden) return;
+  editing = null;
+  el.editor.hidden = true;
+  resizeChrome();
+}
+
+function favoriteButton(site: BrowserState['favorites'][number]): HTMLButtonElement {
+  const button = document.createElement('button');
+  button.className = 'favorite';
+  button.title = site.url;
+  button.append(site.favicon ? favicon(`fav${site.url}`, site.favicon, '') : icon('globe'));
+  button.append(span('', site.title || site.url));
+  button.addEventListener('click', () => {
+    closePanel();
+    api.navigate(site.url);
+  });
+  return button;
+}
+
+function render(state: BrowserState): void {
+  groups = state.groups;
+  if (activeId !== state.activeId) closeFind(); // the search belongs to the tab being left
+  activeId = state.activeId;
+  el.tabs.replaceChildren(...tabStrip(state));
+  if (hoverId !== null && (hoverId === state.activeId || !state.tabs.some((t) => t.id === hoverId))) hidePreview();
+  if (editing !== null && !groups.some((g) => g.id === editing)) closeEditor();
+  el.back.disabled = !state.canGoBack;
+  el.forward.disabled = !state.canGoForward;
+  el.pin.classList.toggle('pinned', state.isActivePinned);
+  el.pin.title = state.isActivePinned ? 'Unpin this page' : 'Pin this page';
+  el.favorites.replaceChildren(
+    ...(state.favorites.length ? state.favorites.map(favoriteButton) : [span('favorites-empty', 'Pin pages with the star to keep them here')]),
+  );
+
+  for (const [id, image] of faviconCache) if (!image.isConnected) faviconCache.delete(id); // closed tabs, old icons
+
+  const active = state.tabs.find((t) => t.id === state.activeId);
+  const url = active && !isBlank(active.url) ? active.url : '';
+  // Keep the box in step with the tab unless the user is editing it.
+  if (active && !edited && el.address.value !== url) {
+    el.address.value = url;
+    if (document.activeElement === el.address) el.address.select();
+  }
+}
+
+// Every toolbar action leaves the history panel, so its effect is visible.
+function onToolbar(button: HTMLButtonElement, action: () => void): void {
+  button.addEventListener('click', () => {
+    closePanel();
+    action();
+  });
+}
+onToolbar(el.newTab, () => api.newTab());
+onToolbar(el.back, () => api.back());
+onToolbar(el.forward, () => api.forward());
+onToolbar(el.reload, () => api.reload());
+onToolbar(el.home, () => api.home());
+onToolbar(el.pin, () => api.togglePin());
+onToolbar(document.getElementById('incognito-btn') as HTMLButtonElement, () => api.newIncognito());
+onToolbar(document.getElementById('devtools-btn') as HTMLButtonElement, () => api.toggleDevTools());
+let items: Suggestion[] = [];
+let selected = -1;
+let typed = '';
+let request = 0; // bumped on every change so late answers are ignored
+
+function closeDropdown(): void {
+  request++;
+  items = [];
+  selected = -1;
+  drawDropdown();
+}
+
+function open(url: string): void {
+  closeDropdown();
+  api.navigate(url);
+  el.address.blur();
+}
+
+function span(className: string, text: string): HTMLSpanElement {
+  const node = document.createElement('span');
+  node.className = className;
+  node.textContent = text;
+  return node;
+}
+
+function suggestionElement(item: Suggestion, index: number): HTMLDivElement {
+  const row = document.createElement('div');
+  row.className = index === selected ? 'row selected' : 'row';
+  row.addEventListener('click', () => open(item.url));
+
+  const text = span('row-text', item.text);
+  if (item.detail) text.append(span('row-url', item.detail));
+  row.append(icon(item.icon), text);
+
+  if (item.fromHistory) {
+    row.append(
+      removeButton('Remove from history', async () => {
+        await api.removeHistory(item.url);
+        void suggest(typed);
+      }),
+    );
+  }
+  return row;
+}
+
+// The panel needs the whole window (main caps the height), the dropdown only what it covers.
+function resizeChrome(): void {
+  // Extra pixels leave room for the shadow.
+  const dropdown = items.length ? Math.ceil(el.dropdown.getBoundingClientRect().bottom) + 16 : 0;
+  const editor = el.editor.hidden ? 0 : Math.ceil(el.editor.getBoundingClientRect().bottom) + 16;
+  const preview = el.preview.hidden ? 0 : Math.ceil(el.preview.getBoundingClientRect().bottom) + 16;
+  const find = el.find.hidden ? 0 : Math.ceil(el.find.getBoundingClientRect().bottom) + 16;
+  api.setDropdownHeight(panelOpen() ? 100000 : Math.max(dropdown, editor, preview, find));
+}
+
+function drawDropdown(): void {
+  el.dropdown.replaceChildren(...items.map(suggestionElement));
+  el.dropdown.hidden = items.length === 0;
+  resizeChrome();
+}
+
+function fromHistory(entry: HistoryEntry): Suggestion {
+  return { icon: 'clock', text: entry.title, detail: entry.url, url: entry.url, fromHistory: true };
+}
+
+function fromGoogle(query: string): Suggestion {
+  const url = `https://www.google.com/search?q=${encodeURIComponent(query)}`;
+  return { icon: 'search', text: query, detail: '', url, fromHistory: false };
+}
+
+// History is shown at once; Google's suggestions are appended when they arrive.
+async function suggest(query: string): Promise<void> {
+  const current = ++request;
+  typed = query;
+  const history = (await api.searchHistory(query)).map(fromHistory);
+  if (current !== request) return;
+  items = history;
+  selected = -1;
+  drawDropdown();
+
+  const remote = await api.suggest(query);
+  if (current !== request || remote.length === 0) return;
+  items = [...history, ...remote.map(fromGoogle)];
+  drawDropdown();
+}
+
+function select(step: number): void {
+  if (items.length === 0) return;
+  // -1 is the user's own text, so the arrows cycle through it too.
+  selected = ((selected + 1 + step + items.length + 1) % (items.length + 1)) - 1;
+  const item = items[selected];
+  el.address.value = !item ? typed : item.fromHistory ? item.url : item.text;
+  request++; // stop a late answer from reshuffling the list under the cursor
+  drawDropdown();
+}
+
+el.address.addEventListener('input', () => {
+  edited = true;
+  void suggest(el.address.value);
+});
+el.address.addEventListener('keydown', (event) => {
+  if (event.isComposing) return;
+  if (event.key === 'Enter') {
+    const item = items[selected];
+    open(item ? item.url : el.address.value);
+  } else if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+    event.preventDefault();
+    select(event.key === 'ArrowDown' ? 1 : -1);
+  } else if (event.key === 'Escape') {
+    if (items.length) closeDropdown();
+    else el.address.blur();
+  }
+});
+el.address.addEventListener('focus', () => {
+  hidePreview();
+  closePanel();
+  el.address.select();
+});
+// Recent history opens on a click, not on focus, so switching tabs does not cover the page with it.
+// The box holds the current URL, so show the latest history rather than filtering by it.
+el.address.addEventListener('click', () => {
+  if (items.length === 0) void suggest('');
+});
+el.address.addEventListener('blur', () => {
+  edited = false;
+  closeDropdown();
+});
+// Keep focus in the address bar while clicking inside the list.
+el.dropdown.addEventListener('mousedown', (event) => event.preventDefault());
+
+let confirmingClear = false;
+let panelRequest = 0;
+
+function historyRow(entry: HistoryEntry): HTMLDivElement {
+  const row = document.createElement('div');
+  row.className = 'row';
+  row.addEventListener('click', () => {
+    closePanel();
+    api.navigate(entry.url);
+  });
+
+  const time = entry.time ? new Date(entry.time).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false }) : '';
+  const text = span('row-text', entry.title);
+  text.append(span('row-url', entry.url));
+
+  const remove = removeButton('Remove from history', async () => {
+    await api.removeHistory(entry.url);
+    void drawHistory();
+  });
+
+  row.append(span('history-time', time), text, remove);
+  return row;
+}
+
+// Clearing takes two clicks: the first only arms the button.
+function setConfirming(value: boolean): void {
+  confirmingClear = value;
+  el.historyClear.textContent = value ? 'Click again to delete all' : 'Clear all';
+  el.historyClear.classList.toggle('danger', value);
+}
+
+async function drawHistory(): Promise<void> {
+  const current = ++panelRequest;
+  const query = el.historyFilter.value;
+  const [all, shown] = await Promise.all([api.listHistory(''), api.listHistory(query)]);
+  if (current !== panelRequest) return;
+  el.historyClear.disabled = all.length === 0;
+  if (shown.length) el.historyList.replaceChildren(...shown.map(historyRow));
+  else el.historyList.replaceChildren(span('history-empty', all.length ? 'No matches' : 'No history yet'));
+}
+
+function openPanel(): void {
+  el.settings.hidden = true;
+  hidePreview();
+  closeEditor();
+  closeDropdown();
+  el.address.blur();
+  el.panel.hidden = false;
+  el.historyFilter.value = '';
+  setConfirming(false);
+  resizeChrome();
+  el.historyFilter.focus();
+  void drawHistory();
+}
+
+const panelOpen = (): boolean => !el.panel.hidden || !el.settings.hidden;
+
+// Closes whichever full-window panel is open: history or settings.
+function closePanel(): void {
+  if (!panelOpen()) return;
+  el.panel.hidden = true;
+  el.settings.hidden = true;
+  resizeChrome();
+}
+
+el.historyButton.addEventListener('click', () => (el.panel.hidden ? openPanel() : closePanel()));
+el.historyClose.addEventListener('click', closePanel);
+el.historyFilter.addEventListener('input', () => void drawHistory());
+el.historyClear.addEventListener('click', async () => {
+  if (!confirmingClear) return setConfirming(true);
+  setConfirming(false);
+  await api.clearHistory(); // all entries, not only the ones matching the filter
+  void drawHistory();
+});
+el.historyClear.addEventListener('blur', () => setConfirming(false));
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape') closePanel();
+});
+
+el.groupName.addEventListener('input', () => {
+  if (editing !== null) api.updateGroup(editing, { name: el.groupName.value });
+});
+el.groupName.addEventListener('keydown', (event) => {
+  if (event.key === 'Enter' && !event.isComposing) closeEditor();
+});
+el.ungroup.addEventListener('click', () => {
+  if (editing !== null) api.ungroup(editing);
+  closeEditor();
+});
+el.closeGroup.addEventListener('click', () => {
+  if (editing !== null) api.closeGroup(editing);
+  closeEditor();
+});
+// Clicking elsewhere, in the toolbar or on the page, or pressing Escape closes the editor.
+document.addEventListener('mousedown', (event) => {
+  if (!el.editor.contains(event.target as Node)) closeEditor();
+});
+window.addEventListener('blur', closeEditor);
+window.addEventListener('blur', hidePreview);
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape') closeEditor();
+});
+
+dropTarget(el.newTab, () => ({ kind: 'end' })); // dropping on "+" takes a tab out to the end
+api.onFocusAddress(() => {
+  if (panelOpen() || !el.editor.hidden) return;
+  edited = false;
+  closeDropdown();
+  el.address.focus();
+  el.address.select();
+});
+type NetworkSettings = import('../shared/types').NetworkSettings;
+
+// Fields that do not apply to the chosen mode are greyed out.
+function enableFields(): void {
+  el.proxyServer.disabled = el.proxyBypass.disabled = el.proxyMode.value !== 'manual';
+  el.dnsUrl.disabled = el.dnsMode.value !== 'custom';
+}
+
+function showStatus(message: string, error = false): void {
+  el.settingsStatus.textContent = message;
+  el.settingsStatus.classList.toggle('error', error);
+}
+
+async function openSettings(): Promise<void> {
+  const saved = await api.getNetwork();
+  closePanel();
+  closeEditor();
+  hidePreview();
+  closeDropdown();
+  el.address.blur();
+  el.proxyMode.value = saved.proxyMode;
+  el.proxyServer.value = saved.proxyServer;
+  el.proxyBypass.value = saved.proxyBypass;
+  el.dnsMode.value = saved.dnsMode;
+  el.dnsUrl.value = saved.dnsUrl;
+  enableFields();
+  showStatus('');
+  el.settings.hidden = false;
+  resizeChrome();
+  el.proxyMode.focus();
+}
+
+el.settingsButton.addEventListener('click', () => (el.settings.hidden ? void openSettings() : closePanel()));
+el.settingsClose.addEventListener('click', closePanel);
+el.settingsForm.addEventListener('change', () => {
+  enableFields();
+  showStatus('');
+});
+for (const button of el.settingsForm.querySelectorAll<HTMLButtonElement>('[data-clear]')) {
+  button.addEventListener('click', async () => {
+    await api.clearData(button.dataset.clear as string);
+    showStatus(`Cleared: ${button.textContent}`);
+  });
+}
+el.settingsForm.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const error = await api.setNetwork({
+    proxyMode: el.proxyMode.value as NetworkSettings['proxyMode'],
+    proxyServer: el.proxyServer.value,
+    proxyBypass: el.proxyBypass.value,
+    dnsMode: el.dnsMode.value as NetworkSettings['dnsMode'],
+    dnsUrl: el.dnsUrl.value,
+  });
+  showStatus(error || 'Saved. Reload open pages to use the new settings.', error !== '');
+});
+
+function openFind(): void {
+  closePanel();
+  closeDropdown();
+  el.find.hidden = false;
+  resizeChrome();
+  el.findText.focus();
+  el.findText.select();
+  if (el.findText.value) api.find(el.findText.value, true, false);
+}
+
+function closeFind(): void {
+  if (el.find.hidden) return;
+  el.find.hidden = true;
+  el.findCount.textContent = '';
+  api.stopFind();
+  resizeChrome();
+}
+
+el.findText.addEventListener('input', () => {
+  el.findCount.textContent = '';
+  api.find(el.findText.value, true, false);
+});
+el.findText.addEventListener('keydown', (event) => {
+  if (event.key === 'Enter' && !event.isComposing) api.find(el.findText.value, !event.shiftKey, true);
+  else if (event.key === 'Escape') closeFind();
+});
+el.findPrev.addEventListener('click', () => api.find(el.findText.value, false, true));
+el.findNext.addEventListener('click', () => api.find(el.findText.value, true, true));
+el.findClose.addEventListener('click', closeFind);
+api.onShowFind(openFind);
+api.onFindResult((current, total) => {
+  el.findCount.textContent = total ? `${current} / ${total}` : 'No results';
+});
+
+api.onShowHistory(openPanel);
+api.onEditGroup(openEditor);
+api.onState(render);

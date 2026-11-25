@@ -1,0 +1,20 @@
+{
+  "name": "mybrowser",
+  "version": "0.1.0",
+  "main": "dist/main/main.js",
+  "scripts": {
+    "build": "tsc -p . && node scripts/copy-static.js",
+    "start": "npm run build && electron .",
+    "test": "npm run build && node --test test/url.test.js test/suggest.test.js test/groups.test.js test/network.test.js test/permissions.test.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "Ambaser browser",
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "electron": "^45.5.0",
+    "typescript": "^7.0.2"
+  },
+  "private": true
+}

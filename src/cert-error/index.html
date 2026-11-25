@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'">
+  <title>Your connection isn't private</title>
+  <link rel="stylesheet" href="cert-error.css">
+</head>
+<body>
+  <div class="box">
+    <svg class="icon" viewBox="0 0 24 24"><path d="M12 4L2.5 20h19zM12 10v4M12 17.5v.01"/></svg>
+    <h1>Your connection isn't private</h1>
+    <p id="summary"></p>
+    <p class="detail" id="detail"></p>
+    <div class="actions">
+      <button id="back">Go back</button>
+      <button id="proceed" class="danger">Proceed anyway (unsafe)</button>
+    </div>
+  </div>
+  <script src="cert-error.js"></script>
+</body>
+</html>

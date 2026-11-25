@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' https: http: data:; connect-src 'self'">
+  <title>New Tab</title>
+  <link rel="stylesheet" href="home.css">
+</head>
+<body>
+  <h1>Ambaser</h1>
+  <section>
+    <h2>Pinned</h2>
+    <div id="pinned" class="grid"></div>
+    <p id="pinned-empty" class="empty" hidden>No pinned sites yet. Use the star button in the toolbar to pin one.</p>
+  </section>
+  <section>
+    <h2>Last opened</h2>
+    <div id="last-session" class="grid"></div>
+    <p id="last-session-empty" class="empty" hidden>Nothing from the last session.</p>
+  </section>
+  <script src="home.js"></script>
+</body>
+</html>

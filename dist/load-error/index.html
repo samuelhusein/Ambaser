@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'">
+  <title>Can't open this page</title>
+  <link rel="stylesheet" href="load-error.css">
+</head>
+<body>
+  <div class="box">
+    <svg class="icon" viewBox="0 0 24 24"><path d="M12 3a9 9 0 1 0 0 18a9 9 0 1 0 0-18M12 8v5M12 16v.01"/></svg>
+    <h1>Can't open this page</h1>
+    <p id="summary"></p>
+    <p id="hint"></p>
+    <p class="detail" id="detail"></p>
+    <div class="actions">
+      <button id="retry" class="primary">Try again</button>
+      <button id="home">Go to Home</button>
+    </div>
+  </div>
+  <script src="load-error.js"></script>
+</body>
+</html>

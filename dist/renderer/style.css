@@ -1,0 +1,268 @@
+:root {
+  --bg: #1f2125;
+  --surface: #2b2d32;
+  --hover: rgba(255, 255, 255, 0.1);
+  --line: rgba(255, 255, 255, 0.14);
+  --fg: #f5f5f7;
+  --fg-dim: #c7c7cc;
+  --accent: #6cb2ff;
+  --danger: #ff8a80;
+  --input: rgba(0, 0, 0, 0.4);
+  /* Glass: a translucent fill, a bright top edge and a hairline border. */
+  --glass: rgba(255, 255, 255, 0.1);
+  --shine: inset 0 1px 0 rgba(255, 255, 255, 0.18);
+  /* Spacing is in steps of 4px; every button is the same square, so both edges line up. */
+  --gap: 4px;
+  --edge: 8px;
+  --control: 32px;
+  --radius: 10px;
+  --joined: rgba(255, 255, 255, 0.14);
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: transparent;
+  color: var(--fg);
+  font: 13px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  -webkit-app-region: no-drag;
+  user-select: none;
+}
+
+svg {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.75;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+button, input { font: inherit; color: var(--fg); }
+
+.chrome { height: 112px; display: flex; flex-direction: column; background: var(--bg); }
+.favorites { display: flex; align-items: center; gap: var(--gap); height: 28px; padding: 0 var(--edge); overflow-x: auto; background: var(--joined); border-top: 1px solid var(--line); }
+.favorites::-webkit-scrollbar { display: none; }
+.favorite { flex: none; display: flex; align-items: center; gap: 6px; max-width: 160px; height: 22px; padding: 0 8px; border: 0; border-radius: 6px; background: transparent; color: var(--fg-dim); }
+.favorite:hover { background: var(--hover); color: var(--fg); }
+.favorite img { width: 14px; height: 14px; }
+.favorite span { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.favorites-empty { color: var(--fg-dim); font-size: 12px; }
+
+.tab-strip { display: flex; align-items: center; gap: 6px; height: 40px; padding: 0 var(--edge); }
+.tabs { display: flex; align-self: flex-end; align-items: flex-end; height: 32px; gap: 6px; min-width: 0; flex: 0 1 auto; overflow-x: auto; }
+.tabs::-webkit-scrollbar { display: none; }
+
+.tab {
+  flex: 0 1 auto;
+  min-width: 120px;
+  width: 200px;
+  display: flex;
+  align-items: center;
+  gap: var(--edge);
+  height: 28px;
+  margin-bottom: 4px;
+  padding: 0 6px 0 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--fg-dim);
+  cursor: default;
+}
+.tab.sleeping { opacity: 0.55; }
+.tab:hover { background: var(--hover); }
+.tab-favicon { flex: none; width: 16px; height: 16px; }
+.tab-title { flex: 1; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.tab-spinner { flex: none; width: 16px; height: 16px; border-radius: 50%; border: 2px solid var(--accent); border-top-color: transparent; animation: spin 0.8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.toolbar { display: flex; align-items: center; gap: var(--gap); height: 44px; padding: 0 var(--edge); background: var(--joined); }
+
+.icon-btn, .small-btn {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: var(--control);
+  height: var(--control);
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  cursor: pointer;
+}
+.small-btn { width: 20px; height: 20px; border-radius: 4px; color: var(--fg-dim); }
+.small-btn svg { width: 12px; height: 12px; }
+.icon-btn:hover:not(:disabled), .small-btn:hover { background: var(--hover); color: var(--fg); }
+.icon-btn:disabled { opacity: 0.4; cursor: default; }
+
+.field, #address {
+  height: var(--control);
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--input);
+  outline: none;
+}
+.field:focus, #address:focus { border-color: var(--accent); }
+#address { flex: 1; min-width: 0; margin: 0 var(--gap); }
+
+/* Lined up with the address bar: 3 buttons on its left, 1 on its right. */
+.dropdown {
+  position: absolute;
+  top: 80px;
+  left: calc(var(--edge) + 3 * var(--control) + 4 * var(--gap));
+  right: calc(var(--edge) + var(--control) + 2 * var(--gap));
+  padding: var(--gap);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+}
+.dropdown[hidden], .history-panel[hidden], .group-editor[hidden], .preview[hidden] { display: none; }
+
+.row { display: flex; align-items: center; gap: 12px; height: var(--control); padding: 0 6px 0 var(--edge); border-radius: 4px; cursor: pointer; }
+.row:hover, .row.selected { background: var(--hover); }
+.row > svg { color: var(--fg-dim); }
+.row-text { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.row-url { margin-left: var(--edge); color: var(--fg-dim); }
+
+.history-panel { position: absolute; top: 112px; right: 0; bottom: 0; left: 0; overflow-y: auto; background: var(--bg); }
+.history-body { display: flex; flex-direction: column; gap: 16px; max-width: 768px; margin: 0 auto; padding: 24px; }
+.history-head { display: flex; align-items: center; gap: var(--edge); }
+.history-head h1 { flex: 1; margin: 0; font-size: 20px; font-weight: 600; }
+.history-time { flex: none; width: 120px; white-space: nowrap; color: var(--fg-dim); font-variant-numeric: tabular-nums; }
+.history-empty { display: block; padding: 24px; color: var(--fg-dim); text-align: center; }
+
+.text-btn { display: flex; align-items: center; gap: var(--edge); height: var(--control); padding: 0 12px; border: 1px solid var(--line); border-radius: var(--radius); background: transparent; cursor: pointer; }
+.text-btn:hover:not(:disabled) { background: var(--hover); }
+.text-btn:disabled { opacity: 0.35; cursor: default; }
+.text-btn.danger { border-color: var(--danger); color: var(--danger); }
+
+/* Each colour class only sets --group; chips, tab underlines and swatches read it. */
+.c-grey { --group: #bdc1c6; }
+.c-blue { --group: #8ab4f8; }
+.c-red { --group: #f28b82; }
+.c-yellow { --group: #fdd663; }
+.c-green { --group: #81c995; }
+.c-pink { --group: #ff8bcb; }
+.c-purple { --group: #c58af9; }
+.c-cyan { --group: #78d9ec; }
+
+.group-chip { margin-bottom: 6px; flex: none; display: flex; align-items: center; justify-content: center; gap: 6px; min-width: 24px; height: 24px; padding: 0 var(--edge); border: 0; border-radius: 6px; background: var(--group); color: #202124; font-weight: 600; white-space: nowrap; cursor: pointer; }
+.group-chip svg { width: 14px; height: 14px; }
+.group-chip.collapsed { opacity: 0.7; }
+.tab.grouped { box-shadow: inset 0 -2px 0 var(--group); }
+
+.group-editor { position: absolute; top: 40px; display: flex; flex-direction: column; gap: 12px; width: 256px; padding: 12px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4); }
+.group-editor .field { width: 100%; }
+.choices { display: grid; grid-template-columns: repeat(8, 1fr); justify-items: center; }
+.choice { display: grid; place-items: center; width: 24px; height: 24px; padding: 0; border: 1px solid transparent; border-radius: 6px; background: transparent; cursor: pointer; }
+.choice:hover { background: var(--hover); }
+.choice.selected { border-color: var(--fg); }
+.dot { width: 14px; height: 14px; border-radius: 50%; background: var(--group); }
+.editor-actions { display: grid; grid-template-columns: 1fr 1fr; gap: var(--edge); }
+.editor-actions .text-btn { justify-content: center; }
+
+/* ---- Glass ---- */
+/* On macOS the window itself is blurred by the system, so these fills only tint it. */
+body.mac .chrome { background: rgba(24, 24, 28, 0.86); }
+body.mac .toolbar { background: var(--joined); }
+body.mac .history-panel { background: rgba(24, 24, 28, 0.9); }
+.tab.active { height: 32px; margin-bottom: 0; border-color: transparent; border-radius: var(--radius) var(--radius) 0 0; background: var(--joined); color: #fff; font-weight: 600; box-shadow: var(--shine); }
+.tab.grouped.active { box-shadow: inset 0 2px 0 var(--group); } /* on top, so nothing cuts it off from the toolbar */
+#address, #address:focus { border-radius: 16px; }
+#address { box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.3); }
+.text-btn { border-radius: 16px; background: var(--glass); box-shadow: var(--shine); }
+/* Popups float over the web page, which CSS cannot blur from here, so they stay nearly opaque. */
+.dropdown, .group-editor { border-radius: 14px; background: rgba(44, 44, 48, 0.94); box-shadow: var(--shine), 0 8px 24px rgba(0, 0, 0, 0.35); }
+.row { border-radius: 10px; }
+
+/* Empty parts of the tab strip move the window. */
+.tab-strip { -webkit-app-region: drag; }
+.tab-strip button, .tab { -webkit-app-region: no-drag; }
+
+.window-buttons { flex: none; display: flex; gap: var(--edge); padding: 0 12px 0 6px; -webkit-app-region: no-drag; }
+.window-buttons[hidden] { display: none; }
+.light {
+  display: grid;
+  place-items: center;
+  width: 14px;
+  height: 14px;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 50%;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.45), rgba(255, 255, 255, 0) 55%), var(--tint);
+  box-shadow: inset 0 -1px 2px rgba(255, 255, 255, 0.3), 0 1px 2px rgba(0, 0, 0, 0.3);
+  color: rgba(0, 0, 0, 0.65);
+  cursor: default;
+}
+.light svg { width: 8px; height: 8px; stroke-width: 3; opacity: 0; }
+.window-buttons:hover svg { opacity: 1; }
+.light:active { filter: brightness(0.8); }
+.light-close { --tint: rgba(255, 95, 87, 0.8); }
+.light-minimize { --tint: rgba(254, 188, 46, 0.8); }
+.light-fullscreen { --tint: rgba(40, 200, 64, 0.8); }
+
+/* Where a dragged tab will land: a line for reordering, a ring for joining a group. */
+.tab.drop-before { box-shadow: inset 2px 0 0 var(--accent); }
+.tab.drop-after { box-shadow: inset -2px 0 0 var(--accent); }
+.tab.drop-into, .group-chip.drop-into, .icon-btn.drop-into { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+/* Hover card. It ignores the pointer so it never gets in the way of the tabs or toolbar. */
+.preview { position: absolute; top: 44px; width: 256px; overflow: hidden; pointer-events: none; border: 1px solid var(--line); border-radius: 14px; background: rgba(44, 44, 48, 0.96); box-shadow: var(--shine), 0 8px 24px rgba(0, 0, 0, 0.35); }
+.preview img { display: block; width: 100%; height: 144px; object-fit: cover; object-position: top; }
+.preview img[hidden] { display: none; }
+.preview-title, .preview-url { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; padding: 0 12px; }
+.preview-title { padding-top: var(--edge); font-weight: 600; }
+.preview-url { padding-bottom: var(--edge); color: var(--fg-dim); }
+.preview-url:empty::after { content: "Empty page"; }
+
+#address::placeholder, .field::placeholder { color: #b4b4ba; }
+
+/* ---- Alignment ---- */
+/* Everything in the tab strip is centred on y=22. The active tab reaches 4px lower to meet the toolbar. */
+.tab-strip { padding-top: 4px; }
+.tab.active { padding-bottom: 4px; }
+/* The first light sits over the back button's centre; the first tab starts where the address bar does. */
+.window-buttons { width: 106px; padding: 0 0 0 9px; }
+
+/* Curved feet that flow the active tab into the toolbar: a square with a quarter circle cut out of it. */
+.tab.active { position: relative; }
+.tab.active::before, .tab.active::after { content: ""; position: absolute; bottom: -1px; width: var(--radius); height: var(--radius); pointer-events: none; }
+.tab.active::before { right: calc(100% + 1px); background: radial-gradient(circle at 0 0, transparent calc(var(--radius) - 0.5px), var(--joined) var(--radius)); }
+.tab.active::after { left: calc(100% + 1px); background: radial-gradient(circle at 100% 0, transparent calc(var(--radius) - 0.5px), var(--joined) var(--radius)); }
+/* Room for the feet inside the scrolling strip (otherwise clipped); the negative margin keeps the layout as it was. */
+.tabs { padding: 0 var(--radius); margin: 0 calc(-1 * var(--radius)); }
+
+/* ---- Home, pin and incognito ---- */
+/* Four buttons left of the address bar and two on its right. */
+.dropdown { left: calc(var(--edge) + 4 * var(--control) + 5 * var(--gap)); right: calc(var(--edge) + 2 * var(--control) + 3 * var(--gap)); }
+/* The first tab starts above the home button. */
+.window-buttons { width: 102px; }
+#pin.pinned { color: var(--accent); }
+#pin.pinned svg { fill: currentColor; }
+.badge { flex: none; margin-left: auto; padding: 2px 10px; border: 1px solid var(--line); border-radius: 12px; background: #4a3f7a; color: #eee9ff; font-size: 11px; }
+.badge[hidden] { display: none; }
+body.incognito .chrome, body.mac.incognito .chrome { background: rgba(34, 26, 58, 0.92); }
+
+.clear-actions { display: flex; flex-wrap: wrap; gap: var(--gap); margin-top: 6px; }
+/* ---- Settings ---- */
+/* Four buttons left of the address bar and five on its right. */
+.dropdown { right: calc(var(--edge) + 5 * var(--control) + 6 * var(--gap)); }
+.setting { display: grid; grid-template-columns: 160px 1fr; align-items: center; gap: 12px; }
+.setting .field { width: 100%; margin: 0; }
+.field:disabled { opacity: 0.45; }
+.note { flex: 1; margin: 0; color: var(--fg-dim); line-height: 1.5; }
+.note.error { color: var(--danger); }
+
+/* ---- Find in page ---- */
+.find { position: absolute; top: 116px; right: var(--edge); display: flex; align-items: center; gap: var(--gap); padding: 6px; border: 1px solid var(--line); border-radius: 14px; background: rgba(44, 44, 48, 0.96); box-shadow: var(--shine), 0 8px 24px rgba(0, 0, 0, 0.35); }
+.find[hidden] { display: none; }
+.find .field { width: 220px; }
+.find-count { min-width: 56px; color: var(--fg-dim); text-align: center; font-variant-numeric: tabular-nums; }

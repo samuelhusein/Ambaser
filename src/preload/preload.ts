@@ -1,0 +1,56 @@
+import { contextBridge, ipcRenderer } from 'electron';
+import type { BrowserApi, BrowserState, GroupState, NetworkSettings, TabDrop, WindowAction } from '../shared/types';
+
+// The only surface the chrome UI gets. Fixed channel names, typed arguments, no raw ipcRenderer exposed.
+const api: BrowserApi = {
+  isMac: process.platform === 'darwin',
+  windowAction: (action: WindowAction) => ipcRenderer.send('window:action', action),
+  newTab: (url?: string) => ipcRenderer.send('tab:new', typeof url === 'string' ? url : undefined),
+  closeTab: (id: number) => ipcRenderer.send('tab:close', id),
+  dropTab: (id: number, drop: TabDrop) => ipcRenderer.send('tab:drop', id, drop),
+  previewTab: (id: number) => ipcRenderer.invoke('tab:preview', String(id)),
+  home: () => ipcRenderer.send('nav:home'),
+  newIncognito: () => ipcRenderer.send('window:incognito'),
+  toggleDevTools: () => ipcRenderer.send('page:devtools'),
+  togglePin: () => ipcRenderer.send('pin:toggle'),
+  onShowHistory: (callback: () => void) => {
+    ipcRenderer.on('history:show', () => callback());
+  },
+  onFocusAddress: (callback: () => void) => {
+    ipcRenderer.on('address:focus', () => callback());
+  },
+  getNetwork: () => ipcRenderer.invoke('network:get', ''),
+  setNetwork: (settings: NetworkSettings) => ipcRenderer.invoke('network:set', JSON.stringify(settings)),
+  find: (text: string, forward: boolean, next: boolean) => ipcRenderer.send('find:query', text, forward, next),
+  stopFind: () => ipcRenderer.send('find:stop'),
+  onShowFind: (callback: () => void) => {
+    ipcRenderer.on('find:show', () => callback());
+  },
+  onFindResult: (callback: (current: number, total: number) => void) => {
+    ipcRenderer.on('find:result', (_event, current: number, total: number) => callback(current, total));
+  },
+  tabMenu: (id: number) => ipcRenderer.send('tab:menu', id),
+  updateGroup: (id: number, patch: Partial<GroupState>) => ipcRenderer.send('group:update', id, patch),
+  ungroup: (id: number) => ipcRenderer.send('group:ungroup', id),
+  closeGroup: (id: number) => ipcRenderer.send('group:close', id),
+  onEditGroup: (callback: (id: number) => void) => {
+    ipcRenderer.on('group:edit', (_event, id: number) => callback(id));
+  },
+  activateTab: (id: number) => ipcRenderer.send('tab:activate', id),
+  navigate: (input: string) => ipcRenderer.send('nav:go', input),
+  back: () => ipcRenderer.send('nav:back'),
+  forward: () => ipcRenderer.send('nav:forward'),
+  reload: () => ipcRenderer.send('nav:reload'),
+  searchHistory: (query: string) => ipcRenderer.invoke('history:search', query),
+  removeHistory: (url: string) => ipcRenderer.invoke('history:remove', url),
+  listHistory: (query: string) => ipcRenderer.invoke('history:list', query),
+  clearData: (kind: string) => ipcRenderer.invoke('data:clear', kind),
+  clearHistory: () => ipcRenderer.invoke('history:clear', ''),
+  suggest: (query: string) => ipcRenderer.invoke('suggest', query),
+  setDropdownHeight: (height: number) => ipcRenderer.send('dropdown:height', height),
+  onState: (callback: (state: BrowserState) => void) => {
+    ipcRenderer.on('state', (_event, state: BrowserState) => callback(state));
+  },
+};
+
+contextBridge.exposeInMainWorld('browser', api);
