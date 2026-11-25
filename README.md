@@ -1,5 +1,7 @@
 # Ambaser
 
+Ambaser adalah browser dari Ngawi Timur, di-develop oleh Mas Amba di Ambarawa.
+
 A small desktop web browser built on Electron and TypeScript. It has its own tab strip, favorites bar, history, download list and proxy/DNS settings, and keeps memory use low by putting idle tabs to sleep.
 
 ## Features

@@ -10,7 +10,7 @@
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "description": "Ambaser browser",
+  "description": "Ambaser adalah browser dari Ngawi Timur, di-develop oleh Mas Amba di Ambarawa.",
   "devDependencies": {
     "@types/node": "^26.6.6",
     "electron": "^45.5.0",
