@@ -23,6 +23,8 @@ const api: BrowserApi = {
   unpin: (url: string) => ipcRenderer.send('pin:remove', url),
   tabOverflow: (ids: number[]) => ipcRenderer.send('tabs:overflow', ids),
   newIncognito: () => ipcRenderer.send('window:incognito'),
+  appVersion: () => ipcRenderer.invoke('app:version', ''),
+  updateApp: () => ipcRenderer.invoke('app:update', ''),
   toggleDevTools: () => ipcRenderer.send('page:devtools'),
   togglePin: () => ipcRenderer.send('pin:toggle'),
   onShowHistory: (callback: () => void) => {

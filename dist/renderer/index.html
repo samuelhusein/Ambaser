@@ -90,6 +90,7 @@
         <button type="button" class="nav-btn" data-section="favorites">Favorites</button>
         <button type="button" class="nav-btn" data-section="appearance">Appearance</button>
         <button type="button" class="nav-btn" data-section="privacy">Privacy</button>
+        <button type="button" class="nav-btn" data-section="about">About</button>
       </nav>
       <form id="settings-form" class="history-body">
         <div class="history-head">
@@ -158,6 +159,11 @@
               <button type="button" class="text-btn danger" data-clear="all">Everything</button>
             </div>
           </div>
+        </section>
+        <section class="section" data-section="about" hidden>
+          <p id="app-version" class="note"></p>
+          <div class="clear-actions"><button type="button" id="update-btn" class="text-btn">Update and restart</button></div>
+          <p class="note">Pulls the latest version from GitHub (git pull), installs new packages if needed, then restarts the app. Needs a git checkout and git installed.</p>
         </section>
         <div class="history-head">
           <span id="settings-status" class="note" role="status"></span>

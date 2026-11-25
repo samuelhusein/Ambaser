@@ -1066,6 +1066,14 @@ for (const button of el.settingsForm.querySelectorAll<HTMLButtonElement>('[data-
     showStatus(cleared ? `Cleared: ${button.textContent}` : '');
   });
 }
+const updateButton = document.getElementById('update-btn') as HTMLButtonElement;
+api.appVersion().then((v) => (document.getElementById('app-version')!.textContent = `Ambaser v${v}`));
+updateButton.addEventListener('click', async () => {
+  updateButton.disabled = true;
+  showStatus('Updating…');
+  showStatus(await api.updateApp());
+  updateButton.disabled = false;
+});
 el.settingsForm.addEventListener('submit', async (event) => {
   event.preventDefault();
   const error = await api.setNetwork({

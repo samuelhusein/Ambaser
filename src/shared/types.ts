@@ -107,6 +107,9 @@ export interface BrowserApi {
   forgetCertificate(origin: string): Promise<void>;
   togglePin(): void;
   newIncognito(): void;
+  appVersion(): Promise<string>;
+  // Pulls the latest code and offers a restart. Resolves to a message to show.
+  updateApp(): Promise<string>;
   toggleDevTools(): void;
   onShowHistory(callback: () => void): void;
   // A thumbnail of the tab as a data: URL, or null if there is none yet.

@@ -46,6 +46,8 @@ const appearance_1 = require("../shared/appearance");
 const permissions_2 = require("../shared/permissions");
 const suggest_1 = require("../shared/suggest");
 const groups_1 = require("../shared/groups");
+const child_process_1 = require("child_process");
+const util_1 = require("util");
 const downloads_1 = require("./downloads");
 const history_1 = require("./history");
 const CHROME_HEIGHT = 120; // tab strip 40 + toolbar 44 + pinned bar 36
@@ -151,7 +153,11 @@ function activate(w, tab) {
     w.win.contentView.addChildView(w.chrome); // keep the chrome on top so the dropdown is not hidden
     layout(w);
     broadcast(w);
-    focusAddress(w);
+    // Only an empty tab wants the address bar; on a loaded page the selection would just get in the way.
+    if (tab.url === url_1.BLANK_URL || tab.url === url_1.HOME_URL)
+        focusAddress(w);
+    else
+        tab.view.webContents.focus();
 }
 const SLEEP_AFTER_MS = 10 * 60 * 1000;
 // Frees a background page's memory by replacing it with about:blank; wake() brings it back.
@@ -168,6 +174,7 @@ function sleepTab(w, tab) {
 }
 function wake(tab) {
     tab.sleeping = false;
+    tab.loading = false; // an event ignored while asleep must not leave the spinner on
     const wc = tab.view.webContents;
     const history = wc.navigationHistory;
     if (!history.canGoBack())
@@ -407,10 +414,25 @@ function createTab(w, url, groupId = null) {
         tab.loading = true;
         broadcast(w);
     });
-    wc.on('did-stop-loading', () => {
-        if (tab.sleeping)
+    // The spinner must stop even if the tab fell asleep mid-load, and must not wait for a hanging image or frame.
+    const stopSpinner = () => {
+        if (tab.sleeping || !tab.loading)
             return;
         tab.loading = false;
+        broadcast(w);
+    };
+    wc.on('did-finish-load', stopSpinner);
+    wc.on('dom-ready', () => {
+        const page = wc.getURL();
+        setTimeout(() => {
+            if (!wc.isDestroyed() && wc.getURL() === page)
+                stopSpinner(); // 15s after the page is usable
+        }, 15000);
+    });
+    wc.on('did-stop-loading', () => {
+        tab.loading = false;
+        if (tab.sleeping)
+            return;
         setTimeout(() => {
             if (!wc.isDestroyed())
                 void capture(w, tab);
@@ -714,6 +736,29 @@ function registerIpc() {
         if (all || kind === 'history')
             (0, history_1.clearHistory)();
         return true;
+    });
+    onQuery('app:version', () => electron_1.app.getVersion());
+    // Updates a git checkout: pull, install new dependencies if the lock file changed, restart. Resolves to a message.
+    onQuery('app:update', async (w) => {
+        const sh = (cmd) => (0, util_1.promisify)(child_process_1.exec)(cmd, { cwd: electron_1.app.getAppPath(), timeout: 180000 });
+        try {
+            const lock = () => sh('git rev-parse HEAD:package-lock.json').then((r) => r.stdout);
+            const before = await lock();
+            const { stdout } = await sh('git pull --ff-only');
+            if (/already up to date/i.test(stdout))
+                return 'Already up to date';
+            if ((await lock()) !== before)
+                await sh('npm install --no-audit --no-fund');
+            const { response } = await electron_1.dialog.showMessageBox(w.win, { type: 'info', message: 'Update downloaded', detail: 'Restart now to use it? Your tabs are restored.', buttons: ['Later', 'Restart'], defaultId: 1, cancelId: 0 });
+            if (response !== 1)
+                return 'Updated. Restart to use it';
+            electron_1.app.relaunch();
+            electron_1.app.exit(0);
+            return 'Restarting…';
+        }
+        catch (err) {
+            return `Update failed: ${String(err.stderr || err.message).trim().split(/\r?\n/)[0]}`;
+        }
     });
     onQuery('network:get', () => store_1.store.network());
     onQuery('network:set', async (_w, json) => {
