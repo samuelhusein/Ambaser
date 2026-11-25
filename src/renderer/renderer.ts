@@ -15,6 +15,7 @@ interface Suggestion {
   detail: string;
   url: string; // what to open
   fromHistory: boolean;
+  favicon?: string;
 }
 
 // The page talks to main only through window.browser.
@@ -464,8 +465,6 @@ function drawFavmenu(): void {
       closeFavmenu();
       api.navigate(site.url);
     });
-    const text = span('row-text', site.title || site.url);
-    text.append(span('row-url', site.url));
     const toggle = document.createElement('button');
     toggle.className = site.bar ? 'small-btn on' : 'small-btn';
     toggle.title = site.bar ? 'Hide from the bar' : shown >= barLimit ? `The bar is full (${barLimit})` : 'Show in the bar';
@@ -475,10 +474,10 @@ function drawFavmenu(): void {
       event.stopPropagation();
       api.setFavoriteBar(site.url, !site.bar);
     });
-    row.append(site.favicon ? favicon(`menu${site.url}`, site.favicon, '') : icon('globe'), text, toggle);
+    row.append(menuIcon(site.favicon ? favicon(`menu${site.url}`, site.favicon, '') : monogram(site.title || site.url)), menuText(site.title || site.url, site.url), toggle);
     return row;
   });
-  const note = span('history-empty', favorites.length ? `${shown} of ${barLimit} shown in the bar` : 'No favorites yet');
+  const note = span('menu-note', favorites.length ? `${shown} of ${barLimit} shown in the bar` : 'No favorites yet');
   el.favmenu.replaceChildren(...rows, note);
   resizeChrome();
 }
@@ -702,14 +701,29 @@ function span(className: string, text: string): HTMLSpanElement {
   return node;
 }
 
+// A menu entry's two lines: the name, and under it a short form of the address.
+function menuText(title: string, url: string): HTMLSpanElement {
+  const text = span('row-text', '');
+  text.append(span('row-title', title));
+  if (url) text.append(span('row-url', url.replace(/^https?:\/\/(www\.)?/, '').replace(/\/$/, '')));
+  return text;
+}
+
+// The square in front of a menu entry: the site's icon, or something standing in for it.
+function menuIcon(content: Node): HTMLSpanElement {
+  const tile = span('row-icon', '');
+  tile.append(content);
+  return tile;
+}
+
+const monogram = (title: string): HTMLSpanElement => span('row-letter', title.charAt(0).toUpperCase());
+
 function suggestionElement(item: Suggestion, index: number): HTMLDivElement {
   const row = document.createElement('div');
   row.className = index === selected ? 'row selected' : 'row';
   row.addEventListener('click', () => open(item.url));
 
-  const text = span('row-text', item.text);
-  if (item.detail) text.append(span('row-url', item.detail));
-  row.append(icon(item.icon), text);
+  row.append(menuIcon(item.favicon ? favicon(`suggest${item.url}`, item.favicon, '') : icon(item.icon)), menuText(item.text, item.detail));
 
   if (item.fromHistory) {
     row.append(
@@ -742,7 +756,7 @@ function drawDropdown(): void {
 }
 
 function fromHistory(entry: HistoryEntry): Suggestion {
-  return { icon: 'clock', text: entry.title, detail: entry.url, url: entry.url, fromHistory: true };
+  return { icon: 'clock', text: entry.title, detail: entry.url, url: entry.url, fromHistory: true, favicon: entry.favicon };
 }
 
 function fromGoogle(query: string): Suggestion {
@@ -1063,8 +1077,9 @@ function drawDownloads(): void {
   clear.className = 'text-btn';
   clear.textContent = 'Clear finished';
   clear.disabled = !downloads.some((d) => d.state !== 'progressing' && d.state !== 'paused');
+  clear.hidden = clear.disabled; // nothing to clear, so no button
   clear.addEventListener('click', () => api.downloadAction(0, 'clear'));
-  el.downloads.replaceChildren(...(downloads.length ? downloads.map(downloadRow) : [span('history-empty', 'No downloads yet')]), clear);
+  el.downloads.replaceChildren(...(downloads.length ? downloads.map(downloadRow) : [span('menu-note', 'No downloads yet')]), clear);
   resizeChrome();
 }
 

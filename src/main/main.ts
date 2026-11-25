@@ -31,6 +31,9 @@ registerScheme();
 app.commandLine.appendSwitch('js-flags', '--max-old-space-size=1024');
 app.commandLine.appendSwitch('disk-cache-size', String(100 * 1024 * 1024));
 app.commandLine.appendSwitch('disable-features', 'SpareRendererForSitePerProcess');
+// Blocks WebRTC from revealing this machine's local network IP to any site (video calls, etc.),
+// which otherwise leaks even through a proxy or on an untrusted network.
+app.commandLine.appendSwitch('force-webrtc-ip-handling-policy', 'disable_non_proxied_udp');
 
 // Renamed from MyBrowser: keep the old data folder so history, pins and logins carry over.
 const dataFolder = app.getPath('userData');
