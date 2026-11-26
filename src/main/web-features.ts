@@ -60,8 +60,11 @@ const ENTER_PIP = `(() => {
   video.dataset.autoPip = '1';
   return video.requestPictureInPicture().then(() => {});
 })()`;
-// Only undoes our own: a picture-in-picture the user opened stays.
-const LEAVE_PIP = `document.pictureInPictureElement?.dataset.autoPip && document.exitPictureInPicture().then(() => {})`;
+// Only undoes our own: a picture-in-picture the user opened stays. It checks again a moment later, because a hidden
+// page reports itself visible for an instant when YouTube moves to the next video.
+const LEAVE_PIP = `void setTimeout(() => {
+  if (!document.hidden && document.pictureInPictureElement?.dataset.autoPip) document.exitPictureInPicture().catch(() => {});
+}, 600)`;
 
 export function autoPictureInPicture(wc: WebContents, hidden: boolean): void {
   const url = wc.getURL();
