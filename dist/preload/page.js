@@ -113,3 +113,14 @@ window.addEventListener('wheel', (event) => {
 window.addEventListener('pageshow', () => (lastWheel = performance.now()));
 electron_1.ipcRenderer.on('swipe:end', endSwipe);
 document.addEventListener('visibilitychange', () => electron_1.ipcRenderer.send('page:visibility', document.hidden));
+// Picture-in-picture's "back to tab" button only closes the small window; the browser has to come back by
+// itself. Its close button pauses the video, which tells the two apart.
+document.addEventListener('leavepictureinpicture', (event) => {
+    const video = event.target;
+    if (!document.hidden || !(video instanceof HTMLVideoElement))
+        return;
+    setTimeout(() => {
+        if (video.isConnected && !video.paused)
+            electron_1.ipcRenderer.send('pip:back');
+    }, 300);
+}, true);

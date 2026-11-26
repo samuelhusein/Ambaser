@@ -391,3 +391,13 @@ select.field option { display: flex; align-items: center; gap: 6px; min-height: 
 select.field option::checkmark { width: 14px; content: "✓"; font-size: 12px; text-align: center; visibility: hidden; }
 select.field option:checked::checkmark { visibility: visible; }
 select.field option:hover, select.field option:focus-visible { background: var(--accent); color: light-dark(#ffffff, #10131a); outline: none; }
+
+.update-panel { padding: 14px; gap: 10px; }
+.update-panel[hidden] { display: none; }
+.update-notes { min-height: 0; max-height: 240px; overflow-y: auto; font-size: 12px; line-height: 1.5; }
+.update-notes h2 { margin: 6px 0 2px; font-size: 12px; }
+.update-notes ul { margin: 0; padding-left: 18px; }
+.update-panel .note { flex: none; margin: 0; font-size: 12px; }
+.update-panel .note:empty { display: none; }
+.update-actions { display: flex; justify-content: flex-end; gap: 8px; }
+#update-now { border-color: var(--accent); color: var(--accent); }

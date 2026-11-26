@@ -138,6 +138,8 @@ if (api.isMac) {
   document.body.classList.add('mac');
   (document.getElementById('window-buttons') as HTMLDivElement).hidden = false;
   for (const button of document.querySelectorAll<HTMLButtonElement>('button[data-window]')) {
+    // These must not keep the keyboard: after the window comes back, Space would press the button again.
+    button.addEventListener('mousedown', (event) => event.preventDefault());
     button.addEventListener('click', () => api.windowAction(button.dataset.window as import('../shared/types').WindowAction));
   }
 }
@@ -538,9 +540,11 @@ function render(state: BrowserState): void {
   appearance = state.appearance;
   drawAppearance();
   lastState = state;
-  el.updateBadge.hidden = !state.updateVersion;
-  el.updateBadge.textContent = `Update v${state.updateVersion}`;
-  el.updateBadge.title = 'A newer version is available. Click to update.';
+  update = state.update;
+  el.updateBadge.hidden = !update;
+  el.updateBadge.textContent = `Update v${update?.version}`;
+  el.updateBadge.title = 'A newer version is available. Click to see what changed.';
+  if (!update) closeUpdate();
   favorites = state.favorites;
   drawFavoritesSettings();
   barLimit = state.barLimit;
@@ -762,7 +766,8 @@ function resizeChrome(): void {
   const find = el.find.hidden ? 0 : Math.ceil(el.find.getBoundingClientRect().bottom) + 16;
   const downloads = el.downloads.hidden ? 0 : Math.ceil(el.downloads.getBoundingClientRect().bottom) + 16;
   const favmenu = el.favmenu.hidden ? 0 : Math.ceil(el.favmenu.getBoundingClientRect().bottom) + 16;
-  api.setDropdownHeight(panelOpen() ? 100000 : Math.max(dropdown, editor, preview, find, site, downloads, favmenu));
+  const updating = updatePanel.hidden ? 0 : Math.ceil(updatePanel.getBoundingClientRect().bottom) + 16;
+  api.setDropdownHeight(panelOpen() ? 100000 : Math.max(dropdown, editor, preview, find, site, downloads, favmenu, updating));
 }
 
 function drawDropdown(): void {
@@ -969,6 +974,13 @@ function openPanel(): void {
 
 const panelOpen = (): boolean => !el.panel.hidden || !el.settings.hidden;
 
+// The user closed the panel to get back to the tab, so the keyboard goes back there too.
+function dismissPanel(): void {
+  if (!panelOpen()) return;
+  closePanel();
+  api.focusPage();
+}
+
 // Closes whichever full-window panel is open: history or settings.
 function closePanel(): void {
   closeSite();
@@ -978,8 +990,8 @@ function closePanel(): void {
   resizeChrome();
 }
 
-el.historyButton.addEventListener('click', () => (el.panel.hidden ? openPanel() : closePanel()));
-el.historyClose.addEventListener('click', closePanel);
+el.historyButton.addEventListener('click', () => (el.panel.hidden ? openPanel() : dismissPanel()));
+el.historyClose.addEventListener('click', dismissPanel);
 el.historyFilter.addEventListener('input', () => void drawHistory());
 el.historyRange.addEventListener('change', () => {
   showDateFields();
@@ -997,7 +1009,7 @@ el.historyClear.addEventListener('click', async () => {
 });
 el.historyClear.addEventListener('blur', () => setConfirming(false));
 document.addEventListener('keydown', (event) => {
-  if (event.key === 'Escape') closePanel();
+  if (event.key === 'Escape') dismissPanel();
 });
 
 el.groupName.addEventListener('input', () => {
@@ -1165,12 +1177,8 @@ async function openSettings(): Promise<void> {
   el.proxyMode.focus();
 }
 
-el.settingsButton.addEventListener('click', () => (el.settings.hidden ? void openSettings() : closePanel()));
-el.settingsClose.addEventListener('click', closePanel);
-el.updateBadge.addEventListener('click', async () => {
-  await openSettings();
-  showSection('about');
-});
+el.settingsButton.addEventListener('click', () => (el.settings.hidden ? void openSettings() : dismissPanel()));
+el.settingsClose.addEventListener('click', dismissPanel);
 el.settingsForm.addEventListener('change', () => {
   enableFields();
   showStatus('');
@@ -1250,3 +1258,57 @@ api.onFindResult((current, total) => {
 api.onShowHistory(openPanel);
 api.onEditGroup(openEditor);
 api.onState(render);
+
+// The update popup: what is new, and the choice to install it now or not.
+let update: import('../shared/types').UpdateInfo | null = null;
+const updatePanel = document.getElementById('update-panel') as HTMLDivElement;
+const updateNow = document.getElementById('update-now') as HTMLButtonElement;
+const updateStatus = document.getElementById('update-status') as HTMLParagraphElement;
+
+function closeUpdate(): void {
+  if (updatePanel.hidden) return;
+  updatePanel.hidden = true;
+  resizeChrome();
+}
+
+function openUpdate(): void {
+  if (!update) return;
+  closePanel();
+  closeEditor();
+  closeDropdown();
+  closeFavmenu();
+  closeDownloads();
+  hidePreview();
+  (document.getElementById('update-title') as HTMLElement).textContent = `Ambaser ${update.version} is available`;
+  const sections: [string, string[]][] = [['New', update.features], ['Bug fixes', update.fixes], ['Other changes', update.other]];
+  const nodes = sections.filter(([, items]) => items.length).flatMap(([title, items]) => {
+    const heading = document.createElement('h2');
+    heading.textContent = title;
+    const list = document.createElement('ul');
+    list.append(...items.map((item) => Object.assign(document.createElement('li'), { textContent: item })));
+    return [heading, list];
+  });
+  (document.getElementById('update-notes') as HTMLElement).replaceChildren(...(nodes.length ? nodes : [span('menu-note', 'No release notes for this install.')]));
+  updatePanel.hidden = false;
+  resizeChrome();
+}
+
+el.updateBadge.addEventListener('click', () => (updatePanel.hidden ? openUpdate() : closeUpdate()));
+(document.getElementById('update-later') as HTMLButtonElement).addEventListener('click', closeUpdate);
+updateNow.addEventListener('click', async () => {
+  updateNow.disabled = true;
+  updateStatus.textContent = 'Updating…';
+  resizeChrome();
+  // Installs without git need the PIN saved in Settings > About.
+  updateStatus.textContent = await api.updateApp(localStorage.getItem('update-pin') ?? '');
+  updateNow.disabled = false;
+  resizeChrome();
+});
+document.addEventListener('mousedown', (event) => {
+  const target = event.target as Node;
+  if (!updatePanel.contains(target) && !el.updateBadge.contains(target)) closeUpdate();
+});
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape') closeUpdate();
+});
+window.addEventListener('blur', closeUpdate);

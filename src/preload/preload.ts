@@ -23,6 +23,7 @@ const api: BrowserApi = {
   unpin: (url: string) => ipcRenderer.send('pin:remove', url),
   tabOverflow: (ids: number[]) => ipcRenderer.send('tabs:overflow', ids),
   newIncognito: () => ipcRenderer.send('window:incognito'),
+  focusPage: () => ipcRenderer.send('page:focus'),
   toggleVpn: () => ipcRenderer.send('vpn:toggle'),
   toggleAdblock: () => ipcRenderer.send('adblock:toggle'),
   appVersion: () => ipcRenderer.invoke('app:version', ''),

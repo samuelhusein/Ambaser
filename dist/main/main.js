@@ -48,10 +48,12 @@ const permissions_2 = require("../shared/permissions");
 const suggest_1 = require("../shared/suggest");
 const groups_1 = require("../shared/groups");
 const version_1 = require("../shared/version");
+const updates_1 = require("./updates");
 const child_process_1 = require("child_process");
 const util_1 = require("util");
 const vpn_1 = require("./vpn");
 const adblock_1 = require("./adblock");
+const google_login_1 = require("./google-login");
 const downloads_1 = require("./downloads");
 const history_1 = require("./history");
 const CHROME_HEIGHT = 120; // tab strip 40 + toolbar 44 + pinned bar 36
@@ -100,17 +102,25 @@ const updateUrl = () => {
         return '';
     }
 };
-let latestVersion = null;
-// Asks GitHub which version main is on. Offline or any failure just means no alert.
+let update = null;
+// A git checkout can also tell what changed; without git only the version number is known.
+// Offline or any failure just means no alert.
 async function checkVersion() {
     try {
-        if (!updateUrl())
+        let found = null;
+        if (fs.existsSync(path.join(electron_1.app.getAppPath(), '.git')))
+            found = await (0, updates_1.gitUpdate)(electron_1.app.getAppPath());
+        else if (updateUrl()) {
+            const res = await electron_1.net.fetch(`${updateUrl()}/version`, { signal: AbortSignal.timeout(10000) });
+            const version = res.ok ? (await res.json()).version : null;
+            if (typeof version !== 'string' || !/^\d+\.\d+\.\d+$/.test(version))
+                return;
+            if ((0, version_1.isNewer)(version, electron_1.app.getVersion()))
+                found = { version, features: [], fixes: [], other: [] };
+        }
+        else
             return;
-        const res = await electron_1.net.fetch(`${updateUrl()}/version`, { signal: AbortSignal.timeout(10000) });
-        const version = res.ok ? (await res.json()).version : null;
-        if (typeof version !== 'string' || !/^\d+\.\d+\.\d+$/.test(version) || version === latestVersion)
-            return;
-        latestVersion = version;
+        update = found;
         for (const w of windows)
             broadcast(w);
     }
@@ -171,7 +181,7 @@ function snapshot({ tabs, groups, activeTab }) {
         appearance: store_1.store.appearance(),
         adblock: store_1.store.adblock(),
         vpn: vpn_1.vpnSupported ? (0, vpn_1.vpnStatus)() : null,
-        updateVersion: latestVersion && (0, version_1.isNewer)(latestVersion, electron_1.app.getVersion()) ? latestVersion : null,
+        update,
         activeId: activeTab ? activeTab.id : null,
         canGoBack: activeTab ? activeTab.view.webContents.navigationHistory.canGoBack() : false,
         canGoForward: activeTab ? activeTab.view.webContents.navigationHistory.canGoForward() : false,
@@ -421,7 +431,7 @@ function createTab(w, url, groupId = null) {
         return;
     }
     const view = new electron_1.WebContentsView({ webPreferences: { ...webPreferences, partition: w.partition, preload: PAGE_PRELOAD } });
-    const tab = { id: nextId++, groupId: null, view, title: 'New Tab', url: url_1.BLANK_URL, favicon: null, loading: false, preview: null, sleeping: false, lastActive: Date.now() };
+    const tab = { id: nextId++, groupId: null, view, title: 'New Tab', url, favicon: null, loading: false, preview: null, sleeping: false, lastActive: Date.now() };
     tabs.push(tab);
     (0, groups_1.moveToGroup)(tabs, tab, groupId);
     const wc = view.webContents;
@@ -478,6 +488,16 @@ function createTab(w, url, groupId = null) {
     });
     // Switching tabs also hides a page; only the tab still on screen means the browser itself went away.
     wc.ipc.on('page:visibility', (_event, hidden) => (0, web_features_1.autoPictureInPicture)(wc, hidden === true && w.activeTab === tab));
+    wc.ipc.on('pip:back', () => {
+        if (!w.tabs.includes(tab))
+            return;
+        if (w.win.isMinimized())
+            w.win.restore();
+        w.win.show();
+        electron_1.app.focus({ steal: true });
+        activate(w, tab);
+        wc.focus(); // so Space and the other video keys go to the page right away
+    });
     wc.on('found-in-page', (_event, result) => {
         if (w.activeTab === tab)
             w.chrome.webContents.send('find:result', result.activeMatchOrdinal, result.matches);
@@ -707,6 +727,16 @@ function registerIpc() {
         const hidden = w.tabs.filter((t) => ids.includes(t.id));
         const shorten = (text) => (text.length > 50 ? `${text.slice(0, 49)}…` : text);
         electron_1.Menu.buildFromTemplate(hidden.map((t) => ({ label: shorten(t.title || t.url), click: () => activate(w, t) }))).popup({ window: w.win });
+    });
+    onCommand('page:focus', (w) => {
+        const tab = w.activeTab;
+        if (!tab)
+            return;
+        // An empty tab has nothing to type into, so the address bar gets the keyboard, as when switching to it.
+        if (tab.url === url_1.BLANK_URL || tab.url === url_1.HOME_URL)
+            focusAddress(w);
+        else
+            tab.view.webContents.focus();
     });
     onCommand('vpn:toggle', (w) => void toggleVpn(w));
     onCommand('adblock:toggle', (w) => {
@@ -953,6 +983,7 @@ function createWindow(incognito = false, saved = []) {
     (0, permissions_1.guardPermissions)(partition);
     (0, web_features_1.watchDownloads)(partition);
     (0, adblock_1.watchAdblock)(partition);
+    (0, google_login_1.allowGoogleLogin)(partition);
     windows.push(w);
     if (incognito)
         void (0, network_1.applyProxy)(store_1.store.network(), [partition]);
@@ -983,7 +1014,11 @@ function createWindow(incognito = false, saved = []) {
     chrome.webContents.once('did-finish-load', () => win.show());
     chrome.webContents.on('did-finish-load', () => {
         broadcast(w);
-        focusAddress(w);
+        const url = w.activeTab?.url;
+        if (!url || url === url_1.BLANK_URL || url === url_1.HOME_URL)
+            focusAddress(w);
+        else
+            w.activeTab?.view.webContents.focus();
     });
     chrome.webContents.on('did-fail-load', (_e, code, desc, url) => console.error(`chrome load failed ${url}: ${code} ${desc}`));
     chrome.webContents.on('preload-error', (_e, file, err) => console.error(`preload error ${file}: ${err.message}`));
@@ -1056,6 +1091,33 @@ function openTab() {
 // Replacing the default menu, so the standard app, edit and window menus (copy, paste, quit) stay.
 function buildMenu() {
     const page = () => focusedWindow()?.activeTab?.view.webContents;
+    // Chrome's shortcuts that have no menu entry of their own.
+    const hidden = (accelerator, click) => ({ label: accelerator, accelerator, visible: false, click });
+    const active = () => focusedWindow()?.activeTab;
+    const showTab = (index) => {
+        const w = focusedWindow();
+        const tab = w?.tabs[index < 0 ? w.tabs.length - 1 : index];
+        if (w && tab)
+            activate(w, tab);
+    };
+    const back = () => {
+        const wc = page();
+        if (wc)
+            goBack(wc);
+    };
+    const forward = () => {
+        const history = page()?.navigationHistory;
+        if (history?.canGoForward())
+            history.goForward();
+    };
+    const extra = [
+        // 1 to 8 pick that tab, 9 the last one.
+        ...[1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => hidden(`CmdOrCtrl+${n}`, () => showTab(n === 9 ? -1 : n - 1))),
+        hidden('CmdOrCtrl+Alt+Right', stepTab(1)),
+        hidden('CmdOrCtrl+Alt+Left', stepTab(-1)),
+        hidden('CmdOrCtrl+Shift+]', stepTab(1)),
+        hidden('CmdOrCtrl+Shift+[', stepTab(-1)),
+    ];
     electron_1.Menu.setApplicationMenu(electron_1.Menu.buildFromTemplate([
         ...(IS_MAC ? [{ role: 'appMenu' }] : []),
         {
@@ -1079,6 +1141,9 @@ function buildMenu() {
                             closeTab(w, w.activeTab.id);
                     },
                 },
+                { label: 'Close Window', accelerator: 'CmdOrCtrl+Shift+W', click: () => focusedWindow()?.win.close() },
+                { label: 'Print…', accelerator: 'CmdOrCtrl+P', click: () => page()?.print() },
+                ...extra,
             ],
         },
         { role: 'editMenu' },
@@ -1090,6 +1155,8 @@ function buildMenu() {
                         if (wc)
                             reload(wc);
                     } },
+                { label: 'Force Reload', accelerator: 'CmdOrCtrl+Shift+R', click: () => page()?.reloadIgnoringCache() },
+                hidden('CmdOrCtrl+Alt+I', () => page()?.toggleDevTools()),
                 { label: 'Toggle Developer Tools', accelerator: 'F12', click: () => page()?.toggleDevTools() },
                 { label: 'Toggle Developer Tools', accelerator: 'CmdOrCtrl+Shift+I', visible: false, click: () => page()?.toggleDevTools() },
                 { label: 'Toggle Browser UI Developer Tools', accelerator: 'CmdOrCtrl+Alt+Shift+I', click: () => focusedWindow()?.chrome.webContents.toggleDevTools() },
@@ -1110,6 +1177,22 @@ function buildMenu() {
         {
             label: 'History',
             submenu: [
+                { label: 'Back', accelerator: 'CmdOrCtrl+[', click: back },
+                { label: 'Forward', accelerator: 'CmdOrCtrl+]', click: forward },
+                { label: 'Home', accelerator: 'CmdOrCtrl+Shift+H', click: () => {
+                        const wc = page();
+                        if (wc)
+                            load(wc, url_1.HOME_URL);
+                    } },
+                { label: 'Pin or Unpin This Page', accelerator: 'CmdOrCtrl+D', click: () => {
+                        const tab = active();
+                        if (!tab || !/^https?:/.test(tab.url))
+                            return;
+                        store_1.store.togglePin({ url: tab.url, title: tab.title, favicon: tab.favicon });
+                        for (const w of windows)
+                            broadcast(w);
+                    } },
+                { type: 'separator' },
                 {
                     label: 'Show History',
                     accelerator: IS_MAC ? 'Cmd+Y' : 'Ctrl+H', // Cmd+H hides the app on macOS
@@ -1129,7 +1212,7 @@ electron_1.app.whenReady().then(async () => {
     (0, history_1.loadHistory)();
     (0, store_1.loadStore)();
     void checkVersion();
-    setInterval(() => void checkVersion(), 6 * 60 * 60 * 1000);
+    setInterval(() => void checkVersion(), 60 * 60 * 1000);
     applyAppearance();
     electron_1.nativeTheme.on('updated', () => {
         if (IS_MAC)

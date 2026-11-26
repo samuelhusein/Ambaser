@@ -13,13 +13,15 @@ import { secureOrigin } from '../shared/permissions';
 import { parseSuggestions, searchHistory, suggestQuery } from '../shared/suggest';
 import { GROUP_COLORS, moveToGroup, patchGroup, placeTab, reviveGroups } from '../shared/groups';
 import { isNewer } from '../shared/version';
+import { gitUpdate } from './updates';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import { guardWebRtc, onVpnChange, startVpn, stopVpn, vpnRegistered, vpnStatus, vpnSupported, WARP_TERMS } from './vpn';
 import { applyAdblock, loadAdblock, watchAdblock } from './adblock';
+import { allowGoogleLogin } from './google-login';
 import { downloadAction, downloadList, onDownloadsChange } from './downloads';
 import { allHistory, clearHistory, loadHistory, recordVisit, removeVisit, retitle, setFavicon } from './history';
-import type { BrowserState, GroupState, SiteInfo, TabDrop } from '../shared/types';
+import type { BrowserState, UpdateInfo, GroupState, SiteInfo, TabDrop } from '../shared/types';
 
 const CHROME_HEIGHT = 120; // tab strip 40 + toolbar 44 + pinned bar 36
 const WEB_PARTITION = 'persist:browser';
@@ -98,16 +100,21 @@ const updateUrl = (): string => {
     return '';
   }
 };
-let latestVersion: string | null = null;
+let update: UpdateInfo | null = null;
 
-// Asks GitHub which version main is on. Offline or any failure just means no alert.
+// A git checkout can also tell what changed; without git only the version number is known.
+// Offline or any failure just means no alert.
 async function checkVersion(): Promise<void> {
   try {
-    if (!updateUrl()) return;
-    const res = await net.fetch(`${updateUrl()}/version`, { signal: AbortSignal.timeout(10000) });
-    const version = res.ok ? ((await res.json()) as { version?: unknown }).version : null;
-    if (typeof version !== 'string' || !/^\d+\.\d+\.\d+$/.test(version) || version === latestVersion) return;
-    latestVersion = version;
+    let found: UpdateInfo | null = null;
+    if (fs.existsSync(path.join(app.getAppPath(), '.git'))) found = await gitUpdate(app.getAppPath());
+    else if (updateUrl()) {
+      const res = await net.fetch(`${updateUrl()}/version`, { signal: AbortSignal.timeout(10000) });
+      const version = res.ok ? ((await res.json()) as { version?: unknown }).version : null;
+      if (typeof version !== 'string' || !/^\d+\.\d+\.\d+$/.test(version)) return;
+      if (isNewer(version, app.getVersion())) found = { version, features: [], fixes: [], other: [] };
+    } else return;
+    update = found;
     for (const w of windows) broadcast(w);
   } catch {}
 }
@@ -169,7 +176,7 @@ function snapshot({ tabs, groups, activeTab }: Win): BrowserState {
     appearance: store.appearance(),
     adblock: store.adblock(),
     vpn: vpnSupported ? vpnStatus() : null,
-    updateVersion: latestVersion && isNewer(latestVersion, app.getVersion()) ? latestVersion : null,
+    update,
     activeId: activeTab ? activeTab.id : null,
     canGoBack: activeTab ? activeTab.view.webContents.navigationHistory.canGoBack() : false,
     canGoForward: activeTab ? activeTab.view.webContents.navigationHistory.canGoForward() : false,
@@ -405,7 +412,7 @@ function createTab(w: Win, url: string, groupId: number | null = null): void {
     return;
   }
   const view = new WebContentsView({ webPreferences: { ...webPreferences, partition: w.partition, preload: PAGE_PRELOAD } });
-  const tab: Tab = { id: nextId++, groupId: null, view, title: 'New Tab', url: BLANK_URL, favicon: null, loading: false, preview: null, sleeping: false, lastActive: Date.now() };
+  const tab: Tab = { id: nextId++, groupId: null, view, title: 'New Tab', url, favicon: null, loading: false, preview: null, sleeping: false, lastActive: Date.now() };
   tabs.push(tab);
   moveToGroup(tabs, tab, groupId);
   const wc = view.webContents;
@@ -455,6 +462,14 @@ function createTab(w: Win, url: string, groupId: number | null = null): void {
 
   // Switching tabs also hides a page; only the tab still on screen means the browser itself went away.
   wc.ipc.on('page:visibility', (_event, hidden) => autoPictureInPicture(wc, hidden === true && w.activeTab === tab));
+  wc.ipc.on('pip:back', () => {
+    if (!w.tabs.includes(tab)) return;
+    if (w.win.isMinimized()) w.win.restore();
+    w.win.show();
+    app.focus({ steal: true });
+    activate(w, tab);
+    wc.focus(); // so Space and the other video keys go to the page right away
+  });
   wc.on('found-in-page', (_event, result) => {
     if (w.activeTab === tab) w.chrome.webContents.send('find:result', result.activeMatchOrdinal, result.matches);
   });
@@ -667,6 +682,13 @@ function registerIpc(): void {
     const shorten = (text: string): string => (text.length > 50 ? `${text.slice(0, 49)}…` : text);
     Menu.buildFromTemplate(hidden.map((t) => ({ label: shorten(t.title || t.url), click: () => activate(w, t) }))).popup({ window: w.win });
   });
+  onCommand('page:focus', (w) => {
+    const tab = w.activeTab;
+    if (!tab) return;
+    // An empty tab has nothing to type into, so the address bar gets the keyboard, as when switching to it.
+    if (tab.url === BLANK_URL || tab.url === HOME_URL) focusAddress(w);
+    else tab.view.webContents.focus();
+  });
   onCommand('vpn:toggle', (w) => void toggleVpn(w));
   onCommand('adblock:toggle', (w) => {
     store.setAdblock(!store.adblock());
@@ -872,6 +894,7 @@ function createWindow(incognito = false, saved: SavedTab[] = []): Win {
   guardPermissions(partition);
   watchDownloads(partition);
   watchAdblock(partition);
+  allowGoogleLogin(partition);
   windows.push(w);
   if (incognito) void applyProxy(store.network(), [partition]);
 
@@ -901,7 +924,9 @@ function createWindow(incognito = false, saved: SavedTab[] = []): Win {
   chrome.webContents.once('did-finish-load', () => win.show());
   chrome.webContents.on('did-finish-load', () => {
     broadcast(w);
-    focusAddress(w);
+    const url = w.activeTab?.url;
+    if (!url || url === BLANK_URL || url === HOME_URL) focusAddress(w);
+    else w.activeTab?.view.webContents.focus();
   });
   chrome.webContents.on('did-fail-load', (_e, code, desc, url) => console.error(`chrome load failed ${url}: ${code} ${desc}`));
   chrome.webContents.on('preload-error', (_e, file, err) => console.error(`preload error ${file}: ${err.message}`));
@@ -974,6 +999,30 @@ function openTab(): void {
 // Replacing the default menu, so the standard app, edit and window menus (copy, paste, quit) stay.
 function buildMenu(): void {
   const page = (): WebContents | undefined => focusedWindow()?.activeTab?.view.webContents;
+  // Chrome's shortcuts that have no menu entry of their own.
+  const hidden = (accelerator: string, click: () => void): Electron.MenuItemConstructorOptions => ({ label: accelerator, accelerator, visible: false, click });
+  const active = (): Tab | null | undefined => focusedWindow()?.activeTab;
+  const showTab = (index: number): void => {
+    const w = focusedWindow();
+    const tab = w?.tabs[index < 0 ? w.tabs.length - 1 : index];
+    if (w && tab) activate(w, tab);
+  };
+  const back = (): void => {
+    const wc = page();
+    if (wc) goBack(wc);
+  };
+  const forward = (): void => {
+    const history = page()?.navigationHistory;
+    if (history?.canGoForward()) history.goForward();
+  };
+  const extra = [
+    // 1 to 8 pick that tab, 9 the last one.
+    ...[1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => hidden(`CmdOrCtrl+${n}`, () => showTab(n === 9 ? -1 : n - 1))),
+    hidden('CmdOrCtrl+Alt+Right', stepTab(1)),
+    hidden('CmdOrCtrl+Alt+Left', stepTab(-1)),
+    hidden('CmdOrCtrl+Shift+]', stepTab(1)),
+    hidden('CmdOrCtrl+Shift+[', stepTab(-1)),
+  ];
   Menu.setApplicationMenu(
     Menu.buildFromTemplate([
       ...(IS_MAC ? [{ role: 'appMenu' as const }] : []),
@@ -997,6 +1046,9 @@ function buildMenu(): void {
               if (w?.activeTab) closeTab(w, w.activeTab.id);
             },
           },
+          { label: 'Close Window', accelerator: 'CmdOrCtrl+Shift+W', click: () => focusedWindow()?.win.close() },
+          { label: 'Print…', accelerator: 'CmdOrCtrl+P', click: () => page()?.print() },
+          ...extra,
         ],
       },
       { role: 'editMenu' },
@@ -1007,6 +1059,8 @@ function buildMenu(): void {
           const wc = page();
           if (wc) reload(wc);
         } },
+          { label: 'Force Reload', accelerator: 'CmdOrCtrl+Shift+R', click: () => page()?.reloadIgnoringCache() },
+          hidden('CmdOrCtrl+Alt+I', () => page()?.toggleDevTools()),
           { label: 'Toggle Developer Tools', accelerator: 'F12', click: () => page()?.toggleDevTools() },
           { label: 'Toggle Developer Tools', accelerator: 'CmdOrCtrl+Shift+I', visible: false, click: () => page()?.toggleDevTools() },
           { label: 'Toggle Browser UI Developer Tools', accelerator: 'CmdOrCtrl+Alt+Shift+I', click: () => focusedWindow()?.chrome.webContents.toggleDevTools() },
@@ -1027,6 +1081,19 @@ function buildMenu(): void {
       {
         label: 'History',
         submenu: [
+          { label: 'Back', accelerator: 'CmdOrCtrl+[', click: back },
+          { label: 'Forward', accelerator: 'CmdOrCtrl+]', click: forward },
+          { label: 'Home', accelerator: 'CmdOrCtrl+Shift+H', click: () => {
+            const wc = page();
+            if (wc) load(wc, HOME_URL);
+          } },
+          { label: 'Pin or Unpin This Page', accelerator: 'CmdOrCtrl+D', click: () => {
+            const tab = active();
+            if (!tab || !/^https?:/.test(tab.url)) return;
+            store.togglePin({ url: tab.url, title: tab.title, favicon: tab.favicon });
+            for (const w of windows) broadcast(w);
+          } },
+          { type: 'separator' },
           {
             label: 'Show History',
             accelerator: IS_MAC ? 'Cmd+Y' : 'Ctrl+H', // Cmd+H hides the app on macOS
@@ -1048,7 +1115,7 @@ app.whenReady().then(async () => {
   loadHistory();
   loadStore();
   void checkVersion();
-  setInterval(() => void checkVersion(), 6 * 60 * 60 * 1000);
+  setInterval(() => void checkVersion(), 60 * 60 * 1000);
   applyAppearance();
   nativeTheme.on('updated', () => {
     if (IS_MAC) for (const w of windows) w.win.setVibrancy(glass());

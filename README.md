@@ -51,6 +51,14 @@ On macOS use `Cmd` instead of `Ctrl`.
 | `Ctrl+N` | New window |
 | `Ctrl+Shift+N` | New incognito window |
 | `Ctrl+L` | Focus the address bar |
+| `Ctrl+1` … `Ctrl+8` / `Ctrl+9` | Go to that tab / the last tab |
+| `Ctrl+Alt+Left` / `Right` | Previous / next tab |
+| `Ctrl+[` / `Ctrl+]` | Back / forward |
+| `Ctrl+Shift+H` | Home |
+| `Ctrl+D` | Pin or unpin the page |
+| `Ctrl+Shift+R` | Reload without the cache |
+| `Ctrl+P` | Print |
+| `Ctrl+Shift+W` | Close window |
 | `Ctrl+F` | Find in page |
 | `Ctrl+R` | Reload |
 | `Ctrl+H` (`Cmd+Y` on macOS) | History |
