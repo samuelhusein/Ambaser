@@ -57,6 +57,8 @@ function apply(ses) {
 }
 // The library fires all of a page's scripts at once and handles no failure: on YouTube that is dozens of
 // load listeners and a stream of unhandled rejections. Run them one by one and drop the ones that fail.
+// Each gets its own scope too: run bare, their helpers become page globals that collide with each other
+// and with the site's own names (YouTube lost its icons and logo).
 function queueScripts(engine) {
     const inject = engine.onInjectCosmeticFilters;
     engine.onInjectCosmeticFilters = (event, url, msg) => {
@@ -64,7 +66,7 @@ function queueScripts(engine) {
         const sender = {
             insertCSS: (css, options) => event.sender.insertCSS(css, options).catch(() => { }),
             executeJavaScript: (code, gesture) => {
-                queue = queue.then(() => event.sender.executeJavaScript(code, gesture)).catch(() => { });
+                queue = queue.then(() => event.sender.executeJavaScript(`(() => {\n${code}\n})()`, gesture)).catch(() => { });
             },
         };
         return inject({ frameId: event.frameId, processId: event.processId, sender }, url, msg);
