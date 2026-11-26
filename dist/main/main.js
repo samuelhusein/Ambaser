@@ -72,6 +72,15 @@ electron_1.app.commandLine.appendSwitch('force-webrtc-ip-handling-policy', 'disa
 const dataFolder = electron_1.app.getPath('userData');
 electron_1.app.setName(APP_NAME);
 electron_1.app.setPath('userData', dataFolder);
+// Two copies on one data folder lock each other out of the cache and storage; the second one just shows the first.
+if (!electron_1.app.requestSingleInstanceLock())
+    electron_1.app.exit(0);
+electron_1.app.on('second-instance', () => {
+    const w = focusedWindow();
+    if (w?.win.isMinimized())
+        w.win.restore();
+    w?.win.focus();
+});
 // Some sites (WhatsApp Web) refuse browser names they do not know, so present as the Chrome engine this is.
 electron_1.app.userAgentFallback = electron_1.app.userAgentFallback.replace(new RegExp(` (${APP_NAME}|Electron)/\\S+`, 'g'), '');
 const webPreferences = {
