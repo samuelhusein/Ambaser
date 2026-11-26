@@ -3,7 +3,8 @@
   "version": "0.1.23",
   "main": "dist/main/main.js",
   "scripts": {
-    "build": "tsc -p . && node scripts/copy-static.js",
+    "build": "tsc -p . && node scripts/copy-static.js && node scripts/sign-electron.js",
+    "postinstall": "node scripts/sign-electron.js",
     "start": "npm run build && electron .",
     "test": "npm run build && node --test test/url.test.js test/suggest.test.js test/groups.test.js test/network.test.js test/permissions.test.js test/appearance.test.js test/version.test.js test/vpn.test.js test/profiles.test.js test/downloads.test.js",
     "dev": "node scripts/dev.js"

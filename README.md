@@ -97,5 +97,6 @@ Pinned sites, the last session, network settings, site permissions and trusted c
 ## Notes
 
 - Memory use is capped with startup flags in `src/main/main.ts` (JS heap, disk cache). Raise them if a heavy site runs out of memory.
+- On macOS, `npm install` and `npm run build` sign the local Electron (`scripts/sign-electron.js`), because macOS refuses notifications from an unsigned app. Site notifications only arrive while the site's tab is still there; Web Push is not supported.
 - The sleep delay is `SLEEP_AFTER_MS` in `src/main/main.ts`.
 - Form data typed into a tab that went to sleep is lost.
