@@ -30,6 +30,7 @@ export interface BrowserState {
   adblock: boolean;
   vpn: VpnStatus | null; // null where the built-in VPN is not available
   update: UpdateInfo | null; // a newer version exists on GitHub
+  profile: Profile | null; // the one in use; null while there is only one
   activeId: number | null;
   canGoBack: boolean;
   canGoForward: boolean;
@@ -73,6 +74,17 @@ export interface HistoryEntry {
   favicon?: string;
 }
 
+export interface Profile {
+  id: string; // '' for the default profile
+  name: string;
+  color: GroupColor;
+}
+
+export interface PageQr {
+  url: string;
+  image: string | null; // null when the address is too long for a QR code
+}
+
 export type WindowAction = 'close' | 'minimize' | 'fullscreen';
 
 // Where a dragged tab was dropped.
@@ -99,6 +111,15 @@ export interface DownloadInfo {
 }
 
 export interface BrowserApi {
+  // null for pages without a web address.
+  pageQr(): Promise<PageQr | null>;
+  listProfiles(): Promise<{ current: string; profiles: Profile[] }>;
+  openProfile(id: string): Promise<void>;
+  // Creates and opens a profile. Resolves to an error message, or ''.
+  addProfile(name: string): Promise<string>;
+  // Both resolve to an error message, or ''. Deleting asks first.
+  updateProfile(profile: Profile): Promise<string>;
+  removeProfile(id: string): Promise<string>;
   setFavoriteBar(url: string, on: boolean): void;
   unpin(url: string): void;
   tabOverflow(ids: number[]): void;

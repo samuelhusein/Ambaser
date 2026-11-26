@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import type { BrowserApi, DownloadInfo, BrowserState, GroupState, NetworkSettings, TabDrop, WindowAction } from '../shared/types';
+import type { BrowserApi, DownloadInfo, BrowserState, GroupState, NetworkSettings, Profile, TabDrop, WindowAction } from '../shared/types';
 
 // The only surface the chrome UI gets. Fixed channel names, typed arguments, no raw ipcRenderer exposed.
 const api: BrowserApi = {
@@ -19,6 +19,12 @@ const api: BrowserApi = {
     ipcRenderer.on('downloads:update', (_event, list: DownloadInfo[]) => callback(list));
   },
   downloadAction: (id: number, action: string) => ipcRenderer.send('downloads:action', id, action),
+  pageQr: () => ipcRenderer.invoke('page:qr', ''),
+  listProfiles: () => ipcRenderer.invoke('profiles:list', ''),
+  openProfile: (id: string) => ipcRenderer.invoke('profiles:open', id),
+  addProfile: (name: string) => ipcRenderer.invoke('profiles:add', name),
+  updateProfile: (profile: Profile) => ipcRenderer.invoke('profiles:update', JSON.stringify(profile)),
+  removeProfile: (id: string) => ipcRenderer.invoke('profiles:remove', id),
   setFavoriteBar: (url: string, on: boolean) => ipcRenderer.send('pin:bar', url, on),
   unpin: (url: string) => ipcRenderer.send('pin:remove', url),
   tabOverflow: (ids: number[]) => ipcRenderer.send('tabs:overflow', ids),

@@ -18,6 +18,7 @@
       <button id="tab-overflow" class="overflow-btn" title="More tabs" hidden></button>
       <button id="new-tab" class="icon-btn" title="New tab" data-icon="plus"></button>
       <span id="incognito-badge" class="badge" hidden>Incognito</span>
+      <button id="profile-badge" class="profile-badge" title="Profiles" hidden></button>
     </div>
     <div class="toolbar">
       <button id="back" class="icon-btn" title="Back" data-icon="back"></button>
@@ -27,16 +28,14 @@
       <div class="address-box">
         <button id="site-btn" class="site-btn" title="Site settings" hidden></button>
         <input id="address" type="text" spellcheck="false" autocomplete="off" placeholder="Search Google or enter a web address">
+        <button id="qr-btn" class="site-btn qr-btn" title="QR code for this page" data-icon="qr" hidden></button>
       </div>
       <button id="update-badge" class="badge update-badge" hidden></button>
       <button id="pin" class="icon-btn" title="Pin this page" data-icon="star"></button>
       <button id="vpn-btn" class="icon-btn" title="VPN" data-icon="lock" hidden></button>
       <button id="adblock-btn" class="icon-btn" title="Ad blocker" data-icon="shield"></button>
-      <button id="history-btn" class="icon-btn" title="History" data-icon="clock"></button>
-      <button id="incognito-btn" class="icon-btn" title="New incognito window (⇧⌘N)" data-icon="incognito"></button>
-      <button id="devtools-btn" class="icon-btn" title="Developer tools (F12)" data-icon="code"></button>
       <button id="downloads-btn" class="icon-btn" title="Downloads" data-icon="download"></button>
-      <button id="settings-btn" class="icon-btn" title="Settings" data-icon="sliders"></button>
+      <button id="menu-btn" class="icon-btn" title="Menu" data-icon="more"></button>
     </div>
     <div class="favorites-row">
       <div id="favorites" class="favorites"></div>
@@ -53,6 +52,34 @@
       <button id="update-later" class="text-btn">Later</button>
       <button id="update-now" class="text-btn">Update now</button>
     </div>
+  </div>
+  <div id="menu-panel" class="downloads menu-panel" hidden>
+    <button id="incognito-btn" class="row" title="New incognito window (⇧⌘N)" data-icon="incognito"><span class="row-text">New incognito window</span></button>
+    <button id="profiles-btn" class="row" title="Profiles" data-icon="user"><span class="row-text">Profiles</span></button>
+    <button id="history-btn" class="row" title="History" data-icon="clock"><span class="row-text">History</span></button>
+    <button id="devtools-btn" class="row" title="Developer tools (F12)" data-icon="code"><span class="row-text">Developer tools</span></button>
+    <button id="settings-btn" class="row" title="Settings" data-icon="sliders"><span class="row-text">Settings</span></button>
+  </div>
+  <div id="qr-panel" class="downloads qr-panel" role="dialog" aria-label="QR code" hidden>
+    <img id="qr-image" alt="QR code of this page">
+    <p id="qr-url" class="note"></p>
+  </div>
+  <div id="profiles-panel" class="downloads profiles-panel" role="dialog" aria-label="Profiles" hidden>
+    <div id="profiles-list"></div>
+    <form id="profiles-form">
+      <input id="profile-name" class="field" type="text" maxlength="30" spellcheck="false" autocomplete="off" placeholder="New profile name">
+      <button type="submit" class="text-btn">Add</button>
+    </form>
+    <form id="profile-edit" hidden>
+      <input id="profile-rename" class="field" type="text" maxlength="30" spellcheck="false" autocomplete="off" aria-label="Profile name">
+      <div id="profile-colors" class="choices"></div>
+      <div class="profile-actions">
+        <button type="button" id="profile-delete" class="text-btn danger">Delete</button>
+        <button type="button" id="profile-cancel" class="text-btn">Cancel</button>
+        <button type="submit" class="text-btn">Save</button>
+      </div>
+    </form>
+    <p id="profiles-note" class="note" role="status"></p>
   </div>
   <div id="site-panel" class="site-panel" hidden>
     <div id="site-host" class="site-host"></div>

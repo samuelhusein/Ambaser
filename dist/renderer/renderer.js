@@ -67,7 +67,13 @@ const el = {
     historyToLabel: document.getElementById('history-to-label'),
 };
 // 24x24 line icons, drawn with the current text colour (see the svg rule in style.css).
+// Duplicated from shared/groups.ts, for the same reason as the URL helpers.
+const GROUP_COLOR_NAMES = ['grey', 'blue', 'red', 'yellow', 'green', 'pink', 'purple', 'cyan'];
 const ICONS = {
+    edit: 'M4 20h4L19 9l-4-4L4 16zM13 7l4 4',
+    more: 'M12 4a1 1 0 1 0 0 2a1 1 0 1 0 0-2M12 11a1 1 0 1 0 0 2a1 1 0 1 0 0-2M12 18a1 1 0 1 0 0 2a1 1 0 1 0 0-2',
+    qr: 'M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h2v2h-2zM18 18h2v2h-2zM18 14h2M14 18v2',
+    user: 'M12 4a4 4 0 1 0 0 8a4 4 0 1 0 0-8M5 20c0-3.5 3-5.5 7-5.5s7 2 7 5.5',
     back: 'M19 12H5M11 6l-6 6 6 6',
     forward: 'M5 12h14M13 6l6 6-6 6',
     reload: 'M20 12a8 8 0 1 1-2.34-5.66L20 8.5M20 4v4.5h-4.5',
@@ -122,6 +128,8 @@ if (new URLSearchParams(location.search).has('incognito')) {
     el.incognitoBadge.hidden = false;
     document.body.classList.add('incognito');
 }
+const profileBadge = document.getElementById('profile-badge');
+profileBadge.addEventListener('click', () => document.getElementById('profiles-btn').click());
 // Duplicated from shared/url.ts: this plain script cannot import at runtime.
 const HOME_URL = 'mybrowser://home/';
 const isBlank = (url) => url === 'about:blank' || url === HOME_URL;
@@ -338,7 +346,7 @@ function choice(label, selected, content, pick) {
     return button;
 }
 function drawChoices(color, current) {
-    const colors = ['grey', 'blue', 'red', 'yellow', 'green', 'pink', 'purple', 'cyan'];
+    const colors = GROUP_COLOR_NAMES;
     const icons = ['none', 'star', 'briefcase', 'book', 'code', 'play', 'cart', 'heart'];
     const pick = (patch) => {
         if (editing === null)
@@ -412,7 +420,7 @@ let hiddenIds = [];
 // Tabs that do not fit are left out of the strip and counted on the "+N" button. The active tab always stays.
 function splitTabs(state) {
     const strip = el.tabs.parentElement;
-    const others = [document.getElementById('window-buttons'), el.newTab, el.incognitoBadge];
+    const others = [document.getElementById('window-buttons'), el.newTab, el.incognitoBadge, profileBadge];
     const used = others.reduce((sum, node) => sum + (node && !node.hidden ? node.offsetWidth + 6 : 0), 0);
     const max = Math.max(1, Math.floor((strip.clientWidth - 16 - used - 52) / 126)); // a tab is at least 120px wide, plus the gap
     if (state.tabs.length <= max)
@@ -495,6 +503,7 @@ function drawFavoritesSettings() {
         : [span('history-empty', 'No favorites yet')]));
 }
 function render(state) {
+    showProfile(state.profile); // first: it changes the room left for tabs
     vpnButton.hidden = state.vpn === null;
     vpnButton.style.opacity = state.vpn === 'off' ? '0.4' : '';
     vpnButton.style.color = state.vpn === 'on' ? '#34a853' : state.vpn === 'error' ? '#ea4335' : state.vpn === 'connecting' ? '#fbbc04' : '';
@@ -539,6 +548,9 @@ function render(state) {
     const web = /^https?:/.test(current);
     const insecure = current.startsWith('http:');
     el.siteButton.hidden = !web;
+    document.getElementById('qr-btn').hidden = !web;
+    if (!web || shownUrl !== `${state.activeId} ${current}`)
+        closePop(document.getElementById('qr-panel')); // another page
     el.siteButton.classList.toggle('insecure', insecure);
     el.siteButton.replaceChildren(icon(insecure ? 'unlock' : 'lock'));
     if (siteUrl !== null && siteUrl !== `${state.activeId} ${current}`)
@@ -722,8 +734,11 @@ function resizeChrome() {
     const find = el.find.hidden ? 0 : Math.ceil(el.find.getBoundingClientRect().bottom) + 16;
     const downloads = el.downloads.hidden ? 0 : Math.ceil(el.downloads.getBoundingClientRect().bottom) + 16;
     const favmenu = el.favmenu.hidden ? 0 : Math.ceil(el.favmenu.getBoundingClientRect().bottom) + 16;
+    const qr = qrPanel.hidden ? 0 : Math.ceil(qrPanel.getBoundingClientRect().bottom) + 16;
+    const profiles = profilesPanel.hidden ? 0 : Math.ceil(profilesPanel.getBoundingClientRect().bottom) + 16;
+    const menu = menuPanel.hidden ? 0 : Math.ceil(menuPanel.getBoundingClientRect().bottom) + 16;
     const updating = updatePanel.hidden ? 0 : Math.ceil(updatePanel.getBoundingClientRect().bottom) + 16;
-    api.setDropdownHeight(panelOpen() ? 100000 : Math.max(dropdown, editor, preview, find, site, downloads, favmenu, updating));
+    api.setDropdownHeight(panelOpen() ? 100000 : Math.max(dropdown, editor, preview, find, site, downloads, favmenu, updating, qr, profiles, menu));
 }
 function drawDropdown() {
     el.dropdown.replaceChildren(...items.map(suggestionElement));
@@ -906,6 +921,9 @@ async function drawHistory() {
         el.historyList.replaceChildren(span('history-empty', all.length ? 'No matches' : 'No history yet'));
 }
 function openPanel() {
+    closePop(menuPanel);
+    closePop(qrPanel);
+    closePop(profilesPanel);
     el.settings.hidden = true;
     hidePreview();
     closeEditor();
@@ -1267,3 +1285,166 @@ document.addEventListener('keydown', (event) => {
         closeUpdate();
 });
 window.addEventListener('blur', closeUpdate);
+// ---- QR code and profiles: small panels under their toolbar buttons ----
+const qrPanel = document.getElementById('qr-panel');
+const qrImage = document.getElementById('qr-image');
+const qrText = document.getElementById('qr-url');
+const profilesPanel = document.getElementById('profiles-panel');
+const profilesList = document.getElementById('profiles-list');
+const profilesForm = document.getElementById('profiles-form');
+const profileInput = document.getElementById('profile-name');
+const profilesNote = document.getElementById('profiles-note');
+function closePop(panel) {
+    if (panel.hidden)
+        return;
+    panel.hidden = true;
+    resizeChrome();
+}
+// The button toggles its panel; clicking elsewhere, leaving the window or pressing Escape closes it.
+function popup(button, panel, fill) {
+    button.addEventListener('click', async () => {
+        if (!panel.hidden)
+            return closePop(panel);
+        await fill();
+        closePanel();
+        closeEditor();
+        closeDropdown();
+        closeFavmenu();
+        hidePreview();
+        panel.hidden = false;
+        // A button in the address bar gets its panel right under it, not at the window's edge.
+        if (button.closest('.address-box'))
+            panel.style.right = `${Math.max(8, window.innerWidth - button.getBoundingClientRect().right - 4)}px`;
+        resizeChrome();
+    });
+    document.addEventListener('mousedown', (event) => {
+        const target = event.target;
+        if (!panel.contains(target) && !button.contains(target))
+            closePop(panel);
+    });
+    document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape')
+            closePop(panel);
+    });
+    window.addEventListener('blur', () => closePop(panel));
+}
+// The less used toolbar actions live in this menu; picking one closes it.
+const menuPanel = document.getElementById('menu-panel');
+popup(document.getElementById('menu-btn'), menuPanel, async () => { });
+menuPanel.addEventListener('click', (event) => {
+    if (event.target.closest('button'))
+        closePop(menuPanel);
+});
+popup(document.getElementById('qr-btn'), qrPanel, async () => {
+    const qr = await api.pageQr();
+    qrImage.hidden = !qr?.image;
+    if (qr?.image) {
+        qrImage.src = qr.image;
+        await qrImage.decode(); // the panel is measured once it opens
+    }
+    qrText.textContent = !qr ? 'Open a web page to get its QR code.' : qr.image ? qr.url : 'This address is too long for a QR code.';
+});
+// A round mark with the profile's first letter, in its colour.
+const avatar = (profile) => span(`avatar c-${profile.color}`, (Array.from(profile.name)[0] ?? '?').toUpperCase());
+let shownProfile = '';
+function showProfile(profile) {
+    const key = profile ? `${profile.color} ${profile.name}` : '';
+    if (key === shownProfile)
+        return;
+    shownProfile = key;
+    profileBadge.hidden = !profile;
+    profileBadge.className = `profile-badge c-${profile?.color ?? 'blue'}`;
+    profileBadge.replaceChildren(...(profile ? [avatar(profile), span('row-title', profile.name)] : []));
+    // The same colour runs along the top of the window.
+    document.body.classList.remove(...GROUP_COLOR_NAMES.map((c) => `profile-${c}`));
+    if (profile)
+        document.body.classList.add(`profile-${profile.color}`);
+}
+const profileEdit = document.getElementById('profile-edit');
+const profileRename = document.getElementById('profile-rename');
+const profileColors = document.getElementById('profile-colors');
+const profileDelete = document.getElementById('profile-delete');
+let editedProfile = null;
+let currentId = '';
+function showEditor(profile) {
+    editedProfile = profile && { ...profile };
+    profileEdit.hidden = !profile;
+    profilesList.hidden = !!profile;
+    profilesForm.hidden = !!profile;
+    profilesNote.textContent = profile ? '' : 'Each profile has its own logins, history, favorites and settings.';
+    if (profile) {
+        profileRename.value = profile.name;
+        profileDelete.hidden = !profile.id || profile.id === currentId;
+        profileColors.replaceChildren(...GROUP_COLOR_NAMES.map((color) => {
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = color === profile.color ? 'choice selected' : 'choice';
+            button.title = color;
+            button.append(span(`dot c-${color}`, ''));
+            button.addEventListener('click', () => {
+                if (editedProfile)
+                    editedProfile.color = color;
+                for (const other of profileColors.children)
+                    other.classList.toggle('selected', other === button);
+            });
+            return button;
+        }));
+    }
+    resizeChrome();
+}
+async function fillProfiles() {
+    const { current, profiles } = await api.listProfiles();
+    currentId = current;
+    profilesList.replaceChildren(...profiles.map((profile) => {
+        const row = document.createElement('div');
+        row.className = 'profile-row';
+        const open = document.createElement('button');
+        open.type = 'button';
+        open.className = 'row';
+        open.disabled = profile.id === current;
+        if (open.disabled)
+            row.classList.add('current');
+        open.append(avatar(profile), span('row-text', profile.name), span('row-url', open.disabled ? 'This window' : 'Open'));
+        open.addEventListener('click', () => {
+            closePop(profilesPanel);
+            void api.openProfile(profile.id);
+        });
+        const edit = document.createElement('button');
+        edit.type = 'button';
+        edit.className = 'small-btn';
+        edit.title = `Edit ${profile.name}`;
+        edit.append(icon('edit'));
+        // The list is replaced here, so this must not count as a click outside the panel.
+        edit.addEventListener('click', () => showEditor(profile));
+        row.append(open, edit);
+        return row;
+    }));
+    profileInput.value = '';
+    showEditor(null);
+}
+popup(document.getElementById('profiles-btn'), profilesPanel, fillProfiles);
+profilesForm.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const error = await api.addProfile(profileInput.value);
+    if (!error)
+        return closePop(profilesPanel);
+    profilesNote.textContent = error;
+    resizeChrome();
+});
+// Back to the list after a change, or the reason it did not happen.
+async function afterEdit(error) {
+    if (!error)
+        return fillProfiles();
+    profilesNote.textContent = error;
+    resizeChrome();
+}
+profileEdit.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    if (editedProfile)
+        await afterEdit(await api.updateProfile({ ...editedProfile, name: profileRename.value }));
+});
+profileDelete.addEventListener('click', async () => {
+    if (editedProfile)
+        await afterEdit(await api.removeProfile(editedProfile.id));
+});
+document.getElementById('profile-cancel').addEventListener('click', () => showEditor(null));

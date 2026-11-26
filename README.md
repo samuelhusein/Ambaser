@@ -16,6 +16,9 @@ A small desktop web browser built on Electron and TypeScript. It has its own tab
 - **Downloads**: a list with progress, pause/resume, cancel, and "show in folder".
 - **Settings**: proxy and DNS-over-HTTPS (Network), clear cache / cookies / history (Privacy).
 - **Incognito windows**: separate in-memory session, nothing saved.
+- **Menu**: the three-dot button holds incognito, profiles, history, developer tools and settings.
+- **Profiles**: Menu > Profiles adds, opens, renames, recolours or deletes a profile with its own logins, history, favorites and settings. With more than one, a coloured avatar at the top right and a line along the window show which one you are in. Each one runs as its own copy of the app, so it uses more memory; an extra profile quits when its last window closes, and must be closed before it can be deleted. The first profile cannot be deleted.
+- **QR code**: the button at the right end of the address bar shows the current page's address as a QR code, to open it on a phone. It is made locally.
 - **Certificate warnings**: a bad certificate shows a warning page. "Proceed" is remembered for that host in the normal profile.
 - **Find in page, zoom, reopen closed tab, restore last session.**
 
@@ -85,7 +88,7 @@ Web pages run sandboxed with context isolation. Only the chrome UI can send comm
 
 ## Data
 
-Pinned sites, the last session, network settings, site permissions and trusted certificate hosts are stored in `browser-data.json` in the app's user data folder. History is stored beside it.
+Pinned sites, the last session, network settings, site permissions and trusted certificate hosts are stored in `browser-data.json` in the app's user data folder. History is stored beside it. Other profiles keep the same files under `Profiles/` in that folder.
 
 ## mac-local-proxy
 

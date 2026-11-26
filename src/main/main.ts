@@ -19,6 +19,8 @@ import { promisify } from 'util';
 import { guardWebRtc, onVpnChange, startVpn, stopVpn, vpnRegistered, vpnStatus, vpnSupported, WARP_TERMS } from './vpn';
 import { applyAdblock, loadAdblock, watchAdblock } from './adblock';
 import { allowGoogleLogin } from './google-login';
+import { addProfile, currentProfile, listProfiles, openProfile, removeProfile, updateProfile, useProfile, watchProfiles, whyKeep } from './profiles';
+import qrcode from 'qrcode-generator';
 import { downloadAction, downloadList, onDownloadsChange } from './downloads';
 import { allHistory, clearHistory, loadHistory, recordVisit, removeVisit, retitle, setFavicon } from './history';
 import type { BrowserState, UpdateInfo, GroupState, SiteInfo, TabDrop } from '../shared/types';
@@ -43,13 +45,15 @@ app.commandLine.appendSwitch('force-webrtc-ip-handling-policy', 'disable_non_pro
 // Renamed from MyBrowser: keep the old data folder so history, pins and logins carry over.
 const dataFolder = app.getPath('userData');
 app.setName(APP_NAME);
-app.setPath('userData', dataFolder);
+useProfile(dataFolder);
 // Two copies on one data folder lock each other out of the cache and storage; the second one just shows the first.
 if (!app.requestSingleInstanceLock()) app.exit(0);
 app.on('second-instance', () => {
-  const w = focusedWindow();
-  if (w?.win.isMinimized()) w.win.restore();
-  w?.win.focus();
+  if (!app.isReady()) return;
+  const w = focusedWindow() ?? createWindow();
+  if (w.win.isMinimized()) w.win.restore();
+  w.win.show();
+  app.focus({ steal: true }); // asked for from another profile's window
 });
 // Some sites (WhatsApp Web) refuse browser names they do not know, so present as the Chrome engine this is.
 app.userAgentFallback = app.userAgentFallback.replace(new RegExp(` (${APP_NAME}|Electron)/\\S+`, 'g'), '');
@@ -177,6 +181,8 @@ function snapshot({ tabs, groups, activeTab }: Win): BrowserState {
     adblock: store.adblock(),
     vpn: vpnSupported ? vpnStatus() : null,
     update,
+    // Marked only once there is more than one to tell apart.
+    profile: listProfiles().length > 1 ? currentProfile() : null,
     activeId: activeTab ? activeTab.id : null,
     canGoBack: activeTab ? activeTab.view.webContents.navigationHistory.canGoBack() : false,
     canGoForward: activeTab ? activeTab.view.webContents.navigationHistory.canGoForward() : false,
@@ -186,6 +192,31 @@ function snapshot({ tabs, groups, activeTab }: Win): BrowserState {
 function broadcast(w: Win): void {
   if (!w.win.isDestroyed() && !w.chrome.webContents.isDestroyed()) w.chrome.webContents.send('state', snapshot(w));
   updateDockBadge();
+}
+
+// Incognito and extra profiles say so in the window title.
+const windowTitle = (incognito: boolean): string =>
+  [APP_NAME, currentProfile().id && `(${currentProfile().name})`, incognito && '(Incognito)'].filter(Boolean).join(' ');
+
+function showProfiles(): void {
+  for (const w of windows) {
+    if (w.win.isDestroyed()) continue;
+    w.win.setTitle(windowTitle(w.incognito));
+    broadcast(w);
+  }
+}
+
+async function deleteProfile(w: Win, id: string): Promise<string> {
+  const reason = whyKeep(id);
+  if (reason) return reason;
+  const name = listProfiles().find((p) => p.id === id)?.name;
+  // Cancel is the default, so pressing Return or Escape deletes nothing.
+  const { response } = await dialog.showMessageBox(w.win, { type: 'warning', message: `Delete the profile "${name}"?`, detail: 'Its logins, history, favorites and settings are removed. This cannot be undone.', buttons: ['Cancel', 'Delete'], defaultId: 0, cancelId: 0 });
+  if (response !== 1) return '';
+  const error = removeProfile(id);
+  if (error) await dialog.showMessageBox(w.win, { type: 'error', message: error });
+  showProfiles();
+  return error;
 }
 
 const reroute = (): Promise<void> => applyProxy(store.network(), [WEB_PARTITION, ...windows.map((w) => w.partition)]);
@@ -661,7 +692,37 @@ function findTab(w: Win, id: unknown): Tab | undefined {
   return typeof id === 'number' ? w.tabs.find((t) => t.id === id) : undefined;
 }
 
+// A QR code of the page on screen, made here so the address is not sent anywhere. The image is null
+// when the address is too long for one.
+function pageQr(w: Win): { url: string; image: string | null } | null {
+  const url = w.activeTab ? displayUrl(w.activeTab.url) : '';
+  if (!/^https?:/.test(url)) return null;
+  try {
+    const qr = qrcode(0, 'M');
+    qr.addData(url);
+    qr.make();
+    return { url, image: qr.createDataURL(6, 24) };
+  } catch {
+    return { url, image: null };
+  }
+}
+
 function registerIpc(): void {
+  onQuery('page:qr', (w) => pageQr(w));
+  onQuery('profiles:list', () => ({ current: currentProfile().id, profiles: listProfiles() }));
+  onQuery('profiles:open', (_w, id) => openProfile(id));
+  onQuery('profiles:add', (_w, name) => {
+    const error = addProfile(name);
+    showProfiles();
+    return error;
+  });
+  onQuery('profiles:update', (_w, json) => {
+    const { id, name, color } = JSON.parse(json);
+    const error = updateProfile(String(id), String(name), color);
+    showProfiles();
+    return error;
+  });
+  onQuery('profiles:remove', (w, id) => deleteProfile(w, id));
   onCommand('tab:new', (w, url) => {
     const target = typeof url === 'string' ? normalizeInput(url) : null;
     createTab(w, target ?? HOME_URL);
@@ -877,7 +938,7 @@ function createWindow(incognito = false, saved: SavedTab[] = []): Win {
   const win = new BrowserWindow({
     width: 1200,
     height: 800,
-    title: incognito ? `${APP_NAME} (Incognito)` : APP_NAME,
+    title: windowTitle(incognito),
     icon: ICON, // Windows and Linux; macOS uses the Dock icon set at startup
     autoHideMenuBar: true, // Windows/Linux: hidden until Alt is pressed; shortcuts keep working
     show: false, // shown once the chrome UI has painted, so there is no blank flash
@@ -1134,6 +1195,7 @@ app.whenReady().then(async () => {
   }
   registerIpc();
   buildMenu();
+  watchProfiles(showProfiles);
   void loadAdblock(WEB_PARTITION); // not awaited: the first start downloads the filter lists
   reopenWindow();
   setInterval(() => {
@@ -1147,7 +1209,8 @@ app.whenReady().then(async () => {
 });
 
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') app.quit();
+  // An extra profile quits with its last window, even on macOS, so it frees its memory and can be deleted.
+  if (process.platform !== 'darwin' || currentProfile().id) app.quit();
 });
 
 // Electron rejects bad certificates. Accept one only for a host the user trusted on the warning page.

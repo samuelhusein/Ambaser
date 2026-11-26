@@ -32,6 +32,9 @@ var __importStar = (this && this.__importStar) || (function () {
         return result;
     };
 })();
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 Object.defineProperty(exports, "__esModule", { value: true });
 const electron_1 = require("electron");
 const fs = __importStar(require("fs"));
@@ -54,6 +57,8 @@ const util_1 = require("util");
 const vpn_1 = require("./vpn");
 const adblock_1 = require("./adblock");
 const google_login_1 = require("./google-login");
+const profiles_1 = require("./profiles");
+const qrcode_generator_1 = __importDefault(require("qrcode-generator"));
 const downloads_1 = require("./downloads");
 const history_1 = require("./history");
 const CHROME_HEIGHT = 120; // tab strip 40 + toolbar 44 + pinned bar 36
@@ -73,15 +78,18 @@ electron_1.app.commandLine.appendSwitch('force-webrtc-ip-handling-policy', 'disa
 // Renamed from MyBrowser: keep the old data folder so history, pins and logins carry over.
 const dataFolder = electron_1.app.getPath('userData');
 electron_1.app.setName(APP_NAME);
-electron_1.app.setPath('userData', dataFolder);
+(0, profiles_1.useProfile)(dataFolder);
 // Two copies on one data folder lock each other out of the cache and storage; the second one just shows the first.
 if (!electron_1.app.requestSingleInstanceLock())
     electron_1.app.exit(0);
 electron_1.app.on('second-instance', () => {
-    const w = focusedWindow();
-    if (w?.win.isMinimized())
+    if (!electron_1.app.isReady())
+        return;
+    const w = focusedWindow() ?? createWindow();
+    if (w.win.isMinimized())
         w.win.restore();
-    w?.win.focus();
+    w.win.show();
+    electron_1.app.focus({ steal: true }); // asked for from another profile's window
 });
 // Some sites (WhatsApp Web) refuse browser names they do not know, so present as the Chrome engine this is.
 electron_1.app.userAgentFallback = electron_1.app.userAgentFallback.replace(new RegExp(` (${APP_NAME}|Electron)/\\S+`, 'g'), '');
@@ -182,6 +190,8 @@ function snapshot({ tabs, groups, activeTab }) {
         adblock: store_1.store.adblock(),
         vpn: vpn_1.vpnSupported ? (0, vpn_1.vpnStatus)() : null,
         update,
+        // Marked only once there is more than one to tell apart.
+        profile: (0, profiles_1.listProfiles)().length > 1 ? (0, profiles_1.currentProfile)() : null,
         activeId: activeTab ? activeTab.id : null,
         canGoBack: activeTab ? activeTab.view.webContents.navigationHistory.canGoBack() : false,
         canGoForward: activeTab ? activeTab.view.webContents.navigationHistory.canGoForward() : false,
@@ -191,6 +201,31 @@ function broadcast(w) {
     if (!w.win.isDestroyed() && !w.chrome.webContents.isDestroyed())
         w.chrome.webContents.send('state', snapshot(w));
     updateDockBadge();
+}
+// Incognito and extra profiles say so in the window title.
+const windowTitle = (incognito) => [APP_NAME, (0, profiles_1.currentProfile)().id && `(${(0, profiles_1.currentProfile)().name})`, incognito && '(Incognito)'].filter(Boolean).join(' ');
+function showProfiles() {
+    for (const w of windows) {
+        if (w.win.isDestroyed())
+            continue;
+        w.win.setTitle(windowTitle(w.incognito));
+        broadcast(w);
+    }
+}
+async function deleteProfile(w, id) {
+    const reason = (0, profiles_1.whyKeep)(id);
+    if (reason)
+        return reason;
+    const name = (0, profiles_1.listProfiles)().find((p) => p.id === id)?.name;
+    // Cancel is the default, so pressing Return or Escape deletes nothing.
+    const { response } = await electron_1.dialog.showMessageBox(w.win, { type: 'warning', message: `Delete the profile "${name}"?`, detail: 'Its logins, history, favorites and settings are removed. This cannot be undone.', buttons: ['Cancel', 'Delete'], defaultId: 0, cancelId: 0 });
+    if (response !== 1)
+        return '';
+    const error = (0, profiles_1.removeProfile)(id);
+    if (error)
+        await electron_1.dialog.showMessageBox(w.win, { type: 'error', message: error });
+    showProfiles();
+    return error;
 }
 const reroute = () => (0, network_1.applyProxy)(store_1.store.network(), [WEB_PARTITION, ...windows.map((w) => w.partition)]);
 const reloadAll = () => {
@@ -702,7 +737,38 @@ async function fetchSuggestions(input) {
 function findTab(w, id) {
     return typeof id === 'number' ? w.tabs.find((t) => t.id === id) : undefined;
 }
+// A QR code of the page on screen, made here so the address is not sent anywhere. The image is null
+// when the address is too long for one.
+function pageQr(w) {
+    const url = w.activeTab ? (0, url_1.displayUrl)(w.activeTab.url) : '';
+    if (!/^https?:/.test(url))
+        return null;
+    try {
+        const qr = (0, qrcode_generator_1.default)(0, 'M');
+        qr.addData(url);
+        qr.make();
+        return { url, image: qr.createDataURL(6, 24) };
+    }
+    catch {
+        return { url, image: null };
+    }
+}
 function registerIpc() {
+    onQuery('page:qr', (w) => pageQr(w));
+    onQuery('profiles:list', () => ({ current: (0, profiles_1.currentProfile)().id, profiles: (0, profiles_1.listProfiles)() }));
+    onQuery('profiles:open', (_w, id) => (0, profiles_1.openProfile)(id));
+    onQuery('profiles:add', (_w, name) => {
+        const error = (0, profiles_1.addProfile)(name);
+        showProfiles();
+        return error;
+    });
+    onQuery('profiles:update', (_w, json) => {
+        const { id, name, color } = JSON.parse(json);
+        const error = (0, profiles_1.updateProfile)(String(id), String(name), color);
+        showProfiles();
+        return error;
+    });
+    onQuery('profiles:remove', (w, id) => deleteProfile(w, id));
     onCommand('tab:new', (w, url) => {
         const target = typeof url === 'string' ? (0, url_1.normalizeInput)(url) : null;
         createTab(w, target ?? url_1.HOME_URL);
@@ -966,7 +1032,7 @@ function createWindow(incognito = false, saved = []) {
     const win = new electron_1.BrowserWindow({
         width: 1200,
         height: 800,
-        title: incognito ? `${APP_NAME} (Incognito)` : APP_NAME,
+        title: windowTitle(incognito),
         icon: ICON, // Windows and Linux; macOS uses the Dock icon set at startup
         autoHideMenuBar: true, // Windows/Linux: hidden until Alt is pressed; shortcuts keep working
         show: false, // shown once the chrome UI has painted, so there is no blank flash
@@ -1234,6 +1300,7 @@ electron_1.app.whenReady().then(async () => {
     }
     registerIpc();
     buildMenu();
+    (0, profiles_1.watchProfiles)(showProfiles);
     void (0, adblock_1.loadAdblock)(WEB_PARTITION); // not awaited: the first start downloads the filter lists
     reopenWindow();
     setInterval(() => {
@@ -1250,7 +1317,8 @@ electron_1.app.whenReady().then(async () => {
     });
 });
 electron_1.app.on('window-all-closed', () => {
-    if (process.platform !== 'darwin')
+    // An extra profile quits with its last window, even on macOS, so it frees its memory and can be deleted.
+    if (process.platform !== 'darwin' || (0, profiles_1.currentProfile)().id)
         electron_1.app.quit();
 });
 // Electron rejects bad certificates. Accept one only for a host the user trusted on the warning page.

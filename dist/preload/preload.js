@@ -19,6 +19,12 @@ const api = {
         electron_1.ipcRenderer.on('downloads:update', (_event, list) => callback(list));
     },
     downloadAction: (id, action) => electron_1.ipcRenderer.send('downloads:action', id, action),
+    pageQr: () => electron_1.ipcRenderer.invoke('page:qr', ''),
+    listProfiles: () => electron_1.ipcRenderer.invoke('profiles:list', ''),
+    openProfile: (id) => electron_1.ipcRenderer.invoke('profiles:open', id),
+    addProfile: (name) => electron_1.ipcRenderer.invoke('profiles:add', name),
+    updateProfile: (profile) => electron_1.ipcRenderer.invoke('profiles:update', JSON.stringify(profile)),
+    removeProfile: (id) => electron_1.ipcRenderer.invoke('profiles:remove', id),
     setFavoriteBar: (url, on) => electron_1.ipcRenderer.send('pin:bar', url, on),
     unpin: (url) => electron_1.ipcRenderer.send('pin:remove', url),
     tabOverflow: (ids) => electron_1.ipcRenderer.send('tabs:overflow', ids),
