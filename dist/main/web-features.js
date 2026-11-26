@@ -3,6 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.isExternal = isExternal;
 exports.openExternal = openExternal;
 exports.showContextMenu = showContextMenu;
+exports.autoPictureInPicture = autoPictureInPicture;
 exports.watchDownloads = watchDownloads;
 // Everyday browser behaviour for web pages: right-click menu, downloads, links to other apps.
 const electron_1 = require("electron");
@@ -45,6 +46,23 @@ function showContextMenu(wc, params, openTab) {
     group({ label: 'Back', enabled: history.canGoBack(), click: () => history.goBack() }, { label: 'Forward', enabled: history.canGoForward(), click: () => history.goForward() }, { label: 'Reload', click: () => wc.reload() });
     group({ label: 'Inspect', click: () => wc.inspectElement(params.x, params.y) });
     electron_1.Menu.buildFromTemplate(items).popup();
+}
+// A playing YouTube video moves to a floating corner window while the browser is out of sight.
+const ENTER_PIP = `(() => {
+  const video = [...document.querySelectorAll('video')].find((v) => !v.paused && !v.ended && !v.muted && v.readyState > 2);
+  if (!video || document.pictureInPictureElement || !document.hidden) return;
+  video.addEventListener('leavepictureinpicture', () => delete video.dataset.autoPip, { once: true });
+  video.dataset.autoPip = '1';
+  return video.requestPictureInPicture().then(() => {});
+})()`;
+// Only undoes our own: a picture-in-picture the user opened stays.
+const LEAVE_PIP = `document.pictureInPictureElement?.dataset.autoPip && document.exitPictureInPicture().then(() => {})`;
+function autoPictureInPicture(wc, hidden) {
+    const url = wc.getURL();
+    if (!URL.canParse(url) || !/(^|\.)youtube\.com$/.test(new URL(url).hostname))
+        return;
+    // The second argument counts as a user gesture, which picture-in-picture requires.
+    wc.executeJavaScript(hidden ? ENTER_PIP : LEAVE_PIP, true).catch((err) => console.error(`picture-in-picture: ${err.message}`));
 }
 // Electron asks where to save. This adds progress on the Dock icon and a notification when done.
 const watched = new Set();

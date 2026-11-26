@@ -50,6 +50,7 @@ const groups_1 = require("../shared/groups");
 const version_1 = require("../shared/version");
 const child_process_1 = require("child_process");
 const util_1 = require("util");
+const adblock_1 = require("./adblock");
 const downloads_1 = require("./downloads");
 const history_1 = require("./history");
 const CHROME_HEIGHT = 120; // tab strip 40 + toolbar 44 + pinned bar 36
@@ -158,6 +159,7 @@ function snapshot({ tabs, groups, activeTab }) {
         barLimit: store_1.BAR_LIMIT,
         groups,
         appearance: store_1.store.appearance(),
+        adblock: store_1.store.adblock(),
         updateVersion: latestVersion && (0, version_1.isNewer)(latestVersion, electron_1.app.getVersion()) ? latestVersion : null,
         activeId: activeTab ? activeTab.id : null,
         canGoBack: activeTab ? activeTab.view.webContents.navigationHistory.canGoBack() : false,
@@ -392,6 +394,23 @@ function createTab(w, url, groupId = null) {
     });
     wc.on('did-create-window', (popup) => setUpPopup(popup));
     wc.on('context-menu', (_event, params) => (0, web_features_1.showContextMenu)(wc, params, (url) => createTab(w, url, tab.groupId)));
+    // Trackpad swipe for back and forward; the page preload follows the fingers and asks here.
+    const canSwipe = (direction) => (direction === 'back' ? wc.navigationHistory.canGoBack() : wc.navigationHistory.canGoForward());
+    wc.ipc.handle('swipe:can', (_event, direction) => canSwipe(direction));
+    wc.ipc.on('swipe:go', (_event, direction) => {
+        if (w.activeTab !== tab || !canSwipe(direction))
+            return;
+        if (direction === 'back')
+            goBack(wc);
+        else
+            wc.navigationHistory.goForward();
+    });
+    wc.on('input-event', (_event, input) => {
+        if (input.type === 'gestureScrollEnd' || input.type === 'gestureFlingStart')
+            wc.send('swipe:end');
+    });
+    // Switching tabs also hides a page; only the tab still on screen means the browser itself went away.
+    wc.ipc.on('page:visibility', (_event, hidden) => (0, web_features_1.autoPictureInPicture)(wc, hidden === true && w.activeTab === tab));
     wc.on('found-in-page', (_event, result) => {
         if (w.activeTab === tab)
             w.chrome.webContents.send('find:result', result.activeMatchOrdinal, result.matches);
@@ -621,6 +640,14 @@ function registerIpc() {
         const hidden = w.tabs.filter((t) => ids.includes(t.id));
         const shorten = (text) => (text.length > 50 ? `${text.slice(0, 49)}…` : text);
         electron_1.Menu.buildFromTemplate(hidden.map((t) => ({ label: shorten(t.title || t.url), click: () => activate(w, t) }))).popup({ window: w.win });
+    });
+    onCommand('adblock:toggle', (w) => {
+        store_1.store.setAdblock(!store_1.store.adblock());
+        (0, adblock_1.applyAdblock)();
+        if (w.activeTab)
+            reload(w.activeTab.view.webContents);
+        for (const win of windows)
+            broadcast(win);
     });
     onCommand('window:incognito', () => createWindow(true));
     onCommand('page:devtools', ({ activeTab }) => activeTab?.view.webContents.toggleDevTools());
@@ -857,6 +884,7 @@ function createWindow(incognito = false, saved = []) {
     (0, app_pages_1.registerPages)(partition);
     (0, permissions_1.guardPermissions)(partition);
     (0, web_features_1.watchDownloads)(partition);
+    (0, adblock_1.watchAdblock)(partition);
     windows.push(w);
     if (incognito)
         void (0, network_1.applyProxy)(store_1.store.network(), [partition]);
@@ -1045,6 +1073,7 @@ electron_1.app.whenReady().then(async () => {
     await (0, network_1.applyProxy)(store_1.store.network(), [WEB_PARTITION]);
     registerIpc();
     buildMenu();
+    void (0, adblock_1.loadAdblock)(WEB_PARTITION); // not awaited: the first start downloads the filter lists
     reopenWindow();
     setInterval(() => {
         for (const w of windows)
@@ -1053,7 +1082,10 @@ electron_1.app.whenReady().then(async () => {
     }, 60 * 1000);
     electron_1.app.on('activate', () => {
         if (electron_1.BrowserWindow.getAllWindows().length === 0)
-            reopenWindow();
+            return reopenWindow();
+        // While a picture-in-picture window is up, macOS counts it as open and does not bring back a minimized one.
+        if (windows.every((w) => w.win.isMinimized()))
+            windows[windows.length - 1]?.win.restore();
     });
 });
 electron_1.app.on('window-all-closed', () => {

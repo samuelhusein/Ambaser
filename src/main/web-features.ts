@@ -46,6 +46,24 @@ export function showContextMenu(wc: WebContents, params: Electron.ContextMenuPar
   Menu.buildFromTemplate(items).popup();
 }
 
+// A playing YouTube video moves to a floating corner window while the browser is out of sight.
+const ENTER_PIP = `(() => {
+  const video = [...document.querySelectorAll('video')].find((v) => !v.paused && !v.ended && !v.muted && v.readyState > 2);
+  if (!video || document.pictureInPictureElement || !document.hidden) return;
+  video.addEventListener('leavepictureinpicture', () => delete video.dataset.autoPip, { once: true });
+  video.dataset.autoPip = '1';
+  return video.requestPictureInPicture().then(() => {});
+})()`;
+// Only undoes our own: a picture-in-picture the user opened stays.
+const LEAVE_PIP = `document.pictureInPictureElement?.dataset.autoPip && document.exitPictureInPicture().then(() => {})`;
+
+export function autoPictureInPicture(wc: WebContents, hidden: boolean): void {
+  const url = wc.getURL();
+  if (!URL.canParse(url) || !/(^|\.)youtube\.com$/.test(new URL(url).hostname)) return;
+  // The second argument counts as a user gesture, which picture-in-picture requires.
+  wc.executeJavaScript(hidden ? ENTER_PIP : LEAVE_PIP, true).catch((err: Error) => console.error(`picture-in-picture: ${err.message}`));
+}
+
 // Electron asks where to save. This adds progress on the Dock icon and a notification when done.
 const watched = new Set<string>();
 export function watchDownloads(partition: string): void {

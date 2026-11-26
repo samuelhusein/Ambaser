@@ -6,7 +6,7 @@ import { forgetCertificate, forgetCertificates, hasAcceptedCertificate, isTruste
 import { applyDns, applyProxy } from './network';
 import { BAR_LIMIT, loadStore, store, SavedTab } from './store';
 import { allowsNotifications, guardPermissions, resetPermissions, setSitePermission, sitePermissions } from './permissions';
-import { isExternal, openExternal, showContextMenu, watchDownloads } from './web-features';
+import { autoPictureInPicture, isExternal, openExternal, showContextMenu, watchDownloads } from './web-features';
 import { parseNetwork } from '../shared/network';
 import { parseAppearance } from '../shared/appearance';
 import { secureOrigin } from '../shared/permissions';
@@ -15,6 +15,7 @@ import { GROUP_COLORS, moveToGroup, patchGroup, placeTab, reviveGroups } from '.
 import { isNewer } from '../shared/version';
 import { exec } from 'child_process';
 import { promisify } from 'util';
+import { applyAdblock, loadAdblock, watchAdblock } from './adblock';
 import { downloadAction, downloadList, onDownloadsChange } from './downloads';
 import { allHistory, clearHistory, loadHistory, recordVisit, removeVisit, retitle, setFavicon } from './history';
 import type { BrowserState, GroupState, SiteInfo, TabDrop } from '../shared/types';
@@ -158,6 +159,7 @@ function snapshot({ tabs, groups, activeTab }: Win): BrowserState {
     barLimit: BAR_LIMIT,
     groups,
     appearance: store.appearance(),
+    adblock: store.adblock(),
     updateVersion: latestVersion && isNewer(latestVersion, app.getVersion()) ? latestVersion : null,
     activeId: activeTab ? activeTab.id : null,
     canGoBack: activeTab ? activeTab.view.webContents.navigationHistory.canGoBack() : false,
@@ -381,6 +383,20 @@ function createTab(w: Win, url: string, groupId: number | null = null): void {
   });
   wc.on('did-create-window', (popup) => setUpPopup(popup));
   wc.on('context-menu', (_event, params) => showContextMenu(wc, params, (url) => createTab(w, url, tab.groupId)));
+  // Trackpad swipe for back and forward; the page preload follows the fingers and asks here.
+  const canSwipe = (direction: unknown): boolean => (direction === 'back' ? wc.navigationHistory.canGoBack() : wc.navigationHistory.canGoForward());
+  wc.ipc.handle('swipe:can', (_event, direction) => canSwipe(direction));
+  wc.ipc.on('swipe:go', (_event, direction) => {
+    if (w.activeTab !== tab || !canSwipe(direction)) return;
+    if (direction === 'back') goBack(wc);
+    else wc.navigationHistory.goForward();
+  });
+  wc.on('input-event', (_event, input) => {
+    if (input.type === 'gestureScrollEnd' || input.type === 'gestureFlingStart') wc.send('swipe:end');
+  });
+
+  // Switching tabs also hides a page; only the tab still on screen means the browser itself went away.
+  wc.ipc.on('page:visibility', (_event, hidden) => autoPictureInPicture(wc, hidden === true && w.activeTab === tab));
   wc.on('found-in-page', (_event, result) => {
     if (w.activeTab === tab) w.chrome.webContents.send('find:result', result.activeMatchOrdinal, result.matches);
   });
@@ -593,6 +609,12 @@ function registerIpc(): void {
     const shorten = (text: string): string => (text.length > 50 ? `${text.slice(0, 49)}…` : text);
     Menu.buildFromTemplate(hidden.map((t) => ({ label: shorten(t.title || t.url), click: () => activate(w, t) }))).popup({ window: w.win });
   });
+  onCommand('adblock:toggle', (w) => {
+    store.setAdblock(!store.adblock());
+    applyAdblock();
+    if (w.activeTab) reload(w.activeTab.view.webContents);
+    for (const win of windows) broadcast(win);
+  });
   onCommand('window:incognito', () => createWindow(true));
   onCommand('page:devtools', ({ activeTab }) => activeTab?.view.webContents.toggleDevTools());
   onCommand('tab:close', (w, id) => closeTab(w, Number(id)));
@@ -790,6 +812,7 @@ function createWindow(incognito = false, saved: SavedTab[] = []): Win {
   registerPages(partition);
   guardPermissions(partition);
   watchDownloads(partition);
+  watchAdblock(partition);
   windows.push(w);
   if (incognito) void applyProxy(store.network(), [partition]);
 
@@ -976,12 +999,15 @@ app.whenReady().then(async () => {
   await applyProxy(store.network(), [WEB_PARTITION]);
   registerIpc();
   buildMenu();
+  void loadAdblock(WEB_PARTITION); // not awaited: the first start downloads the filter lists
   reopenWindow();
   setInterval(() => {
     for (const w of windows) for (const tab of w.tabs) sleepTab(w, tab);
   }, 60 * 1000);
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) reopenWindow();
+    if (BrowserWindow.getAllWindows().length === 0) return reopenWindow();
+    // While a picture-in-picture window is up, macOS counts it as open and does not bring back a minimized one.
+    if (windows.every((w) => w.win.isMinimized())) windows[windows.length - 1]?.win.restore();
   });
 });
 

@@ -112,6 +112,7 @@ const ICONS = {
   unlock: 'M6 11h12v9H6zM8.5 11V8a3.5 3.5 0 0 1 6.8-1.2',
   book: 'M12 6c-2-1.5-5-1.5-8 0v13c3-1.5 6-1.5 8 0c2-1.5 5-1.5 8 0V6c-3-1.5-6-1.5-8 0zM12 6v13',
   code: 'M8 8l-4 4l4 4M16 8l4 4l-4 4',
+  shield: 'M12 3l7 3v5c0 5-3 8.5-7 10c-4-1.5-7-5-7-10V6zM9 12l2 2l4-4',
   incognito: 'M3 12h18M6 12l2-7h8l2 7M7.5 20a2.5 2.5 0 1 0 0-5a2.5 2.5 0 1 0 0 5M16.5 20a2.5 2.5 0 1 0 0-5a2.5 2.5 0 1 0 0 5',
   play: 'M8 5l11 7l-11 7z',
   cart: 'M3 4h2l2.5 11h10L20 7H6M9 19h.01M17 19h.01',
@@ -527,6 +528,9 @@ function drawFavoritesSettings(): void {
 }
 
 function render(state: BrowserState): void {
+  adblockButton.style.opacity = state.adblock ? '' : '0.4';
+  adblockButton.title = state.adblock ? 'Ad blocker is on (click to turn off)' : 'Ad blocker is off (click to turn on)';
+  adblockButton.setAttribute('aria-pressed', String(state.adblock));
   appearance = state.appearance;
   drawAppearance();
   lastState = state;
@@ -590,6 +594,8 @@ onToolbar(el.forward, () => api.forward());
 onToolbar(el.reload, () => api.reload());
 onToolbar(el.home, () => api.home());
 onToolbar(el.pin, () => api.togglePin());
+const adblockButton = document.getElementById('adblock-btn') as HTMLButtonElement;
+onToolbar(adblockButton, () => api.toggleAdblock());
 onToolbar(document.getElementById('incognito-btn') as HTMLButtonElement, () => api.newIncognito());
 onToolbar(document.getElementById('devtools-btn') as HTMLButtonElement, () => api.toggleDevTools());
 // ---- Site settings: what the site in the active tab may do ----

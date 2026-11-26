@@ -27,6 +27,7 @@ export interface BrowserState {
   tabs: TabState[];
   groups: GroupState[];
   appearance: Appearance;
+  adblock: boolean;
   updateVersion: string | null; // a newer release exists on GitHub
   activeId: number | null;
   canGoBack: boolean;
@@ -110,6 +111,7 @@ export interface BrowserApi {
   forgetCertificate(origin: string): Promise<void>;
   togglePin(): void;
   newIncognito(): void;
+  toggleAdblock(): void;
   appVersion(): Promise<string>;
   // Pulls the latest code and offers a restart. Resolves to a message to show.
   updateApp(pin: string): Promise<string>;

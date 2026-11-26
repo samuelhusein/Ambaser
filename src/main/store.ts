@@ -28,13 +28,14 @@ interface StoreData {
   lastGroups: GroupState[]; // checked by reviveGroups when used
   network: NetworkSettings;
   appearance: Appearance;
+  adblock: boolean;
   permissions: Record<string, boolean>; // "origin kind" -> allowed
   certificates: Record<string, string>; // host -> fingerprint of the bad certificate the user accepted
 }
 
 const barCount = (): number => data.pinned.filter((s) => s.bar).length;
 
-let data: StoreData = { pinned: [], lastSession: [], lastGroups: [], network: DEFAULT_NETWORK, appearance: parseAppearance(null), permissions: {}, certificates: {} };
+let data: StoreData = { pinned: [], lastSession: [], lastGroups: [], network: DEFAULT_NETWORK, appearance: parseAppearance(null), adblock: true, permissions: {}, certificates: {} };
 const file = (): string => path.join(app.getPath('userData'), 'browser-data.json');
 
 const sites = (list: unknown): SiteEntry[] =>
@@ -50,7 +51,7 @@ export function loadStore(): void {
   try {
     const parsed = JSON.parse(fs.readFileSync(file(), 'utf8'));
     const network = parseNetwork(parsed?.network);
-    data = { pinned: sites(parsed?.pinned), lastSession: sites(parsed?.lastSession), lastGroups: Array.isArray(parsed?.lastGroups) ? parsed.lastGroups : [], network: typeof network === 'string' ? DEFAULT_NETWORK : network, permissions: answers(parsed?.permissions), certificates: strings(parsed?.certificates), appearance: parseAppearance(parsed?.appearance) };
+    data = { pinned: sites(parsed?.pinned), lastSession: sites(parsed?.lastSession), lastGroups: Array.isArray(parsed?.lastGroups) ? parsed.lastGroups : [], network: typeof network === 'string' ? DEFAULT_NETWORK : network, permissions: answers(parsed?.permissions), certificates: strings(parsed?.certificates), appearance: parseAppearance(parsed?.appearance), adblock: parsed?.adblock !== false };
     // Favorites saved before the bar had a limit: the first ones are shown.
     let shown = data.pinned.filter((s) => s.bar === true).length;
     for (const site of data.pinned) if (typeof site.bar !== 'boolean') site.bar = shown < BAR_LIMIT && ++shown > 0;
@@ -92,6 +93,11 @@ export const store = {
   },
   clearPermissions(): void {
     data.permissions = {};
+    save();
+  },
+  adblock: (): boolean => data.adblock,
+  setAdblock(on: boolean): void {
+    data.adblock = on;
     save();
   },
   appearance: (): Appearance => data.appearance,
