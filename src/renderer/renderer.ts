@@ -1137,8 +1137,7 @@ function closeDownloads(): void {
   resizeChrome();
 }
 
-el.downloadsButton.addEventListener('click', () => {
-  if (!el.downloads.hidden) return closeDownloads();
+function openDownloads(): void {
   closePanel();
   closeEditor();
   closeDropdown();
@@ -1146,6 +1145,28 @@ el.downloadsButton.addEventListener('click', () => {
   hidePreview();
   el.downloads.hidden = false;
   drawDownloads();
+}
+
+// A list that opened by itself also closes by itself, unless the pointer gets to it.
+let downloadsTimer = 0;
+const keepDownloads = (): void => window.clearTimeout(downloadsTimer);
+function closeDownloadsSoon(): void {
+  keepDownloads();
+  downloadsTimer = window.setTimeout(closeDownloads, 5000);
+}
+
+el.downloadsButton.addEventListener('click', () => {
+  keepDownloads();
+  if (el.downloads.hidden) openDownloads();
+  else closeDownloads();
+});
+el.downloads.addEventListener('mouseenter', keepDownloads);
+// It never takes the place of something the user has open.
+api.onDownloadStarted(() => {
+  const busy = panelOpen() || items.length > 0 || document.activeElement === el.address || [el.editor, el.sitePanel, el.favmenu, updatePanel, qrPanel, profilesPanel, menuPanel].some((e) => !e.hidden);
+  if (busy || !el.downloads.hidden) return;
+  openDownloads();
+  closeDownloadsSoon();
 });
 // Clicking elsewhere (but not on the button, which toggles) or pressing Escape closes the list.
 document.addEventListener('mousedown', (event) => {

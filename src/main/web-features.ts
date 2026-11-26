@@ -17,6 +17,9 @@ export async function openExternal(wc: WebContents, url: string): Promise<void> 
   if (response === 1) await shell.openExternal(url);
 }
 
+// "Save …" from the menu asks where; every other download goes straight to the Downloads folder.
+const askWhere = new Set<string>();
+
 export function showContextMenu(wc: WebContents, params: Electron.ContextMenuParams, openTab: (url: string) => void): void {
   const { linkURL, srcURL, mediaType, selectionText, isEditable, editFlags } = params;
   const items: MenuItemConstructorOptions[] = [];
@@ -28,7 +31,10 @@ export function showContextMenu(wc: WebContents, params: Electron.ContextMenuPar
     group({ label: 'Open Link in New Tab', click: () => openTab(linkURL) }, { label: 'Copy Link', click: () => clipboard.writeText(linkURL) });
   }
   if (mediaType === 'image' && srcURL) {
-    group({ label: 'Copy Image', click: () => wc.copyImageAt(params.x, params.y) }, { label: 'Save Image…', click: () => wc.downloadURL(srcURL) });
+    group({ label: 'Copy Image', click: () => wc.copyImageAt(params.x, params.y) }, { label: 'Save Image…', click: () => {
+      askWhere.add(srcURL);
+      wc.downloadURL(srcURL);
+    } });
   }
   if (isEditable) {
     group({ role: 'cut', enabled: editFlags.canCut }, { role: 'copy', enabled: editFlags.canCopy }, { role: 'paste', enabled: editFlags.canPaste }, { role: 'selectAll' });
@@ -64,20 +70,21 @@ export function autoPictureInPicture(wc: WebContents, hidden: boolean): void {
   wc.executeJavaScript(hidden ? ENTER_PIP : LEAVE_PIP, true).catch((err: Error) => console.error(`picture-in-picture: ${err.message}`));
 }
 
-// Electron asks where to save. This adds progress on the Dock icon and a notification when done.
+// Saves downloads and adds the list, progress on the Dock icon, and a notification when away from the app.
 const watched = new Set<string>();
-export function watchDownloads(partition: string): void {
+export function watchDownloads(partition: string, started: () => void): void {
   if (watched.has(partition)) return;
   watched.add(partition);
   session.fromPartition(partition).on('will-download', (_event, item) => {
-    if (partition.startsWith('persist:')) trackDownload(item); // incognito downloads are not listed
+    trackDownload(item, partition, askWhere.delete(item.getURLChain()[0]));
+    started();
     const progress = (value: number): void => {
       for (const win of BrowserWindow.getAllWindows()) win.setProgressBar(value);
     };
     item.on('updated', () => progress(item.getTotalBytes() ? item.getReceivedBytes() / item.getTotalBytes() : 2));
     item.once('done', (_e, state) => {
       progress(-1);
-      if (state === 'cancelled' || !Notification.isSupported()) return;
+      if (state === 'cancelled' || BrowserWindow.getFocusedWindow() || !Notification.isSupported()) return;
       const file = item.getSavePath();
       const done = state === 'completed';
       const notice = new Notification({ title: done ? 'Download finished' : 'Download failed', body: item.getFilename() });

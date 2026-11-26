@@ -125,6 +125,7 @@ export interface BrowserApi {
   tabOverflow(ids: number[]): void;
   listDownloads(): Promise<DownloadInfo[]>;
   onDownloads(callback: (list: DownloadInfo[]) => void): void;
+  onDownloadStarted(callback: () => void): void;
   downloadAction(id: number, action: 'pause' | 'resume' | 'cancel' | 'show' | 'open' | 'remove' | 'clear'): void;
   find(text: string, forward: boolean, next: boolean): void;
   stopFind(): void;

@@ -13,7 +13,7 @@ A small desktop web browser built on Electron and TypeScript. It has its own tab
 - **Favorites bar**: pages pinned with the star appear under the address bar. Manage them in Settings > Favorites.
 - **Address bar**: history and Google suggestions (suggestions are off in incognito).
 - **History**: search, delete single entries, or clear everything.
-- **Downloads**: a list with progress, pause/resume, cancel, and "show in folder".
+- **Downloads**: files save straight to the Downloads folder, numbered instead of overwritten ("file (1).pdf"). The list pops up when one starts, with progress, pause/resume, cancel, and "show in folder". "Save Image…" still asks where to save. Incognito windows list their own downloads until you quit; the files stay on disk.
 - **Settings**: proxy and DNS-over-HTTPS (Network), clear cache / cookies / history (Privacy).
 - **Incognito windows**: separate in-memory session, nothing saved.
 - **Menu**: the three-dot button holds incognito, profiles, history, developer tools and settings.

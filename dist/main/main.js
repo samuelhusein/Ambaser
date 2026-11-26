@@ -911,15 +911,15 @@ function registerIpc() {
     onQuery('site:forget-certificate', (w, origin) => onSite(w, origin, (ses, site) => (0, app_pages_1.forgetCertificate)(ses, site.host)));
     onQuery('history:search', (_w, query) => (0, suggest_1.searchHistory)((0, history_1.allHistory)(), query));
     onQuery('history:remove', (_w, url) => (0, history_1.removeVisit)(url));
-    onQuery('downloads:list', () => (0, downloads_1.downloadList)());
-    onCommand('downloads:action', (_w, id, action) => {
+    onQuery('downloads:list', (w) => (0, downloads_1.downloadList)(w.partition));
+    onCommand('downloads:action', (w, id, action) => {
         if (typeof id === 'number' && typeof action === 'string')
-            (0, downloads_1.downloadAction)(id, action);
+            (0, downloads_1.downloadAction)(w.partition, id, action);
     });
     (0, downloads_1.onDownloadsChange)(() => {
         for (const w of windows)
             if (!w.chrome.webContents.isDestroyed())
-                w.chrome.webContents.send('downloads:update', (0, downloads_1.downloadList)());
+                w.chrome.webContents.send('downloads:update', (0, downloads_1.downloadList)(w.partition));
     });
     onQuery('history:list', (_w, query) => (0, suggest_1.searchHistory)((0, history_1.allHistory)(), query, Infinity));
     onQuery('history:clear', () => (0, history_1.clearHistory)());
@@ -1047,7 +1047,11 @@ function createWindow(incognito = false, saved = []) {
     const w = { win, chrome, tabs: [], groups: [], activeTab: null, dropdownHeight: 0, incognito, partition, pageFullscreen: false, finding: false, closed: [] };
     (0, app_pages_1.registerPages)(partition);
     (0, permissions_1.guardPermissions)(partition);
-    (0, web_features_1.watchDownloads)(partition);
+    (0, web_features_1.watchDownloads)(partition, () => {
+        // The list pops up in the window being used, or else the first one of this session.
+        const own = windows.filter((o) => o.partition === partition);
+        (own.find((o) => o.win.isFocused()) ?? own[0])?.chrome.webContents.send('downloads:started');
+    });
     (0, adblock_1.watchAdblock)(partition);
     (0, google_login_1.allowGoogleLogin)(partition);
     windows.push(w);

@@ -836,12 +836,12 @@ function registerIpc(): void {
   onQuery('site:forget-certificate', (w, origin) => onSite(w, origin, (ses, site) => forgetCertificate(ses, site.host)));
   onQuery('history:search', (_w, query) => searchHistory(allHistory(), query));
   onQuery('history:remove', (_w, url) => removeVisit(url));
-  onQuery('downloads:list', () => downloadList());
-  onCommand('downloads:action', (_w, id, action) => {
-    if (typeof id === 'number' && typeof action === 'string') downloadAction(id, action);
+  onQuery('downloads:list', (w) => downloadList(w.partition));
+  onCommand('downloads:action', (w, id, action) => {
+    if (typeof id === 'number' && typeof action === 'string') downloadAction(w.partition, id, action);
   });
   onDownloadsChange(() => {
-    for (const w of windows) if (!w.chrome.webContents.isDestroyed()) w.chrome.webContents.send('downloads:update', downloadList());
+    for (const w of windows) if (!w.chrome.webContents.isDestroyed()) w.chrome.webContents.send('downloads:update', downloadList(w.partition));
   });
   onQuery('history:list', (_w, query) => searchHistory(allHistory(), query, Infinity));
   onQuery('history:clear', () => clearHistory());
@@ -953,7 +953,11 @@ function createWindow(incognito = false, saved: SavedTab[] = []): Win {
   const w: Win = { win, chrome, tabs: [], groups: [], activeTab: null, dropdownHeight: 0, incognito, partition, pageFullscreen: false, finding: false, closed: [] };
   registerPages(partition);
   guardPermissions(partition);
-  watchDownloads(partition);
+  watchDownloads(partition, () => {
+    // The list pops up in the window being used, or else the first one of this session.
+    const own = windows.filter((o) => o.partition === partition);
+    (own.find((o) => o.win.isFocused()) ?? own[0])?.chrome.webContents.send('downloads:started');
+  });
   watchAdblock(partition);
   allowGoogleLogin(partition);
   windows.push(w);

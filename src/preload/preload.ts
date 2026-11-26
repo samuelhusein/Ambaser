@@ -18,6 +18,9 @@ const api: BrowserApi = {
   onDownloads: (callback: (list: DownloadInfo[]) => void) => {
     ipcRenderer.on('downloads:update', (_event, list: DownloadInfo[]) => callback(list));
   },
+  onDownloadStarted: (callback: () => void) => {
+    ipcRenderer.on('downloads:started', () => callback());
+  },
   downloadAction: (id: number, action: string) => ipcRenderer.send('downloads:action', id, action),
   pageQr: () => ipcRenderer.invoke('page:qr', ''),
   listProfiles: () => ipcRenderer.invoke('profiles:list', ''),

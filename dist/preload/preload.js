@@ -18,6 +18,9 @@ const api = {
     onDownloads: (callback) => {
         electron_1.ipcRenderer.on('downloads:update', (_event, list) => callback(list));
     },
+    onDownloadStarted: (callback) => {
+        electron_1.ipcRenderer.on('downloads:started', () => callback());
+    },
     downloadAction: (id, action) => electron_1.ipcRenderer.send('downloads:action', id, action),
     pageQr: () => electron_1.ipcRenderer.invoke('page:qr', ''),
     listProfiles: () => electron_1.ipcRenderer.invoke('profiles:list', ''),
