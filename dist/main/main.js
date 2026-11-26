@@ -50,6 +50,7 @@ const groups_1 = require("../shared/groups");
 const version_1 = require("../shared/version");
 const child_process_1 = require("child_process");
 const util_1 = require("util");
+const vpn_1 = require("./vpn");
 const adblock_1 = require("./adblock");
 const downloads_1 = require("./downloads");
 const history_1 = require("./history");
@@ -160,6 +161,7 @@ function snapshot({ tabs, groups, activeTab }) {
         groups,
         appearance: store_1.store.appearance(),
         adblock: store_1.store.adblock(),
+        vpn: vpn_1.vpnSupported ? (0, vpn_1.vpnStatus)() : null,
         updateVersion: latestVersion && (0, version_1.isNewer)(latestVersion, electron_1.app.getVersion()) ? latestVersion : null,
         activeId: activeTab ? activeTab.id : null,
         canGoBack: activeTab ? activeTab.view.webContents.navigationHistory.canGoBack() : false,
@@ -170,6 +172,62 @@ function broadcast(w) {
     if (!w.win.isDestroyed() && !w.chrome.webContents.isDestroyed())
         w.chrome.webContents.send('state', snapshot(w));
     updateDockBadge();
+}
+const reroute = () => (0, network_1.applyProxy)(store_1.store.network(), [WEB_PARTITION, ...windows.map((w) => w.partition)]);
+const reloadAll = () => {
+    for (const w of windows)
+        if (w.activeTab)
+            reload(w.activeTab.view.webContents);
+};
+async function turnVpnOn(w, strict) {
+    try {
+        await (0, vpn_1.startVpn)(reroute, strict);
+        store_1.store.setVpn(true);
+        reloadAll();
+    }
+    catch (err) {
+        console.error(`vpn: ${err.message}`);
+        if (!w.win.isDestroyed())
+            await electron_1.dialog.showMessageBox(w.win, { type: 'error', message: 'The VPN could not start', detail: err.message });
+    }
+}
+async function turnVpnOff() {
+    store_1.store.setVpn(false);
+    await (0, vpn_1.stopVpn)(reroute);
+    reloadAll();
+}
+let askingVpn = false;
+async function toggleVpn(w) {
+    const status = (0, vpn_1.vpnStatus)();
+    if (!vpn_1.vpnSupported || askingVpn)
+        return;
+    if (status === 'on' || status === 'connecting')
+        return turnVpnOff();
+    askingVpn = true;
+    try {
+        if (status === 'error') {
+            const { response } = await electron_1.dialog.showMessageBox(w.win, { type: 'warning', message: 'The VPN is not connected', detail: 'Pages are blocked until it connects, so nothing goes out unprotected. Some networks block WARP.', buttons: ['Try again', 'Turn VPN off', 'Cancel'], defaultId: 0, cancelId: 2 });
+            if (response === 0)
+                void turnVpnOn(w, true);
+            else if (response === 1)
+                await turnVpnOff();
+            return;
+        }
+        // The first time creates a Cloudflare account, so the user has to agree to its terms.
+        while (!(0, vpn_1.vpnRegistered)()) {
+            const { response } = await electron_1.dialog.showMessageBox(w.win, { type: 'question', message: 'Turn on the built-in VPN?', detail: `It uses Cloudflare WARP, free and without sign-up. It hides your IP address from websites, but you cannot pick a country. Only Ambaser uses it.\n\nBy continuing you accept Cloudflare's terms:\n${vpn_1.WARP_TERMS}\n\nThe first time, a small tunnel program (wireproxy) is downloaded.`, buttons: ['Cancel', 'Read terms', 'Agree and turn on'], defaultId: 2, cancelId: 0 });
+            if (response === 0)
+                return;
+            if (response === 2)
+                break;
+            createTab(w, vpn_1.WARP_TERMS);
+            return;
+        }
+        void turnVpnOn(w, false);
+    }
+    finally {
+        askingVpn = false;
+    }
 }
 function activate(w, tab) {
     if (w.activeTab === tab)
@@ -641,6 +699,7 @@ function registerIpc() {
         const shorten = (text) => (text.length > 50 ? `${text.slice(0, 49)}…` : text);
         electron_1.Menu.buildFromTemplate(hidden.map((t) => ({ label: shorten(t.title || t.url), click: () => activate(w, t) }))).popup({ window: w.win });
     });
+    onCommand('vpn:toggle', (w) => void toggleVpn(w));
     onCommand('adblock:toggle', (w) => {
         store_1.store.setAdblock(!store_1.store.adblock());
         (0, adblock_1.applyAdblock)();
@@ -1071,6 +1130,16 @@ electron_1.app.whenReady().then(async () => {
     // Network settings go in before the first page loads.
     (0, network_1.applyDns)(store_1.store.network());
     await (0, network_1.applyProxy)(store_1.store.network(), [WEB_PARTITION]);
+    (0, vpn_1.onVpnChange)(() => {
+        for (const w of windows)
+            broadcast(w);
+    });
+    electron_1.app.on('web-contents-created', (_event, wc) => (0, vpn_1.guardWebRtc)(wc));
+    // Left on last time: route into it before any page loads, and give it a moment to connect.
+    if (vpn_1.vpnSupported && store_1.store.vpn()) {
+        const started = (0, vpn_1.startVpn)(reroute, true).catch((err) => console.error(`vpn: ${err.message}`));
+        await Promise.race([started, new Promise((resolve) => setTimeout(resolve, 8000))]);
+    }
     registerIpc();
     buildMenu();
     void (0, adblock_1.loadAdblock)(WEB_PARTITION); // not awaited: the first start downloads the filter lists

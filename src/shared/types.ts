@@ -28,6 +28,7 @@ export interface BrowserState {
   groups: GroupState[];
   appearance: Appearance;
   adblock: boolean;
+  vpn: VpnStatus | null; // null where the built-in VPN is not available
   updateVersion: string | null; // a newer release exists on GitHub
   activeId: number | null;
   canGoBack: boolean;
@@ -36,6 +37,8 @@ export interface BrowserState {
   favorites: { url: string; title: string; favicon: string | null; unread: number; bar?: boolean }[]; // pinned sites
   barLimit: number; // most favorites the bar can show
 }
+
+export type VpnStatus = 'off' | 'connecting' | 'on' | 'error';
 
 export interface Appearance {
   mode: 'system' | 'light' | 'dark';
@@ -112,6 +115,7 @@ export interface BrowserApi {
   togglePin(): void;
   newIncognito(): void;
   toggleAdblock(): void;
+  toggleVpn(): void;
   appVersion(): Promise<string>;
   // Pulls the latest code and offers a restart. Resolves to a message to show.
   updateApp(pin: string): Promise<string>;

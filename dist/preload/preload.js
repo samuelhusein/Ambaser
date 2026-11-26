@@ -23,6 +23,7 @@ const api = {
     unpin: (url) => electron_1.ipcRenderer.send('pin:remove', url),
     tabOverflow: (ids) => electron_1.ipcRenderer.send('tabs:overflow', ids),
     newIncognito: () => electron_1.ipcRenderer.send('window:incognito'),
+    toggleVpn: () => electron_1.ipcRenderer.send('vpn:toggle'),
     toggleAdblock: () => electron_1.ipcRenderer.send('adblock:toggle'),
     appVersion: () => electron_1.ipcRenderer.invoke('app:version', ''),
     updateApp: (pin) => electron_1.ipcRenderer.invoke('app:update', pin),

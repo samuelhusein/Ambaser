@@ -493,6 +493,10 @@ function drawFavoritesSettings() {
         : [span('history-empty', 'No favorites yet')]));
 }
 function render(state) {
+    vpnButton.hidden = state.vpn === null;
+    vpnButton.style.opacity = state.vpn === 'off' ? '0.4' : '';
+    vpnButton.style.color = state.vpn === 'on' ? '#34a853' : state.vpn === 'error' ? '#ea4335' : state.vpn === 'connecting' ? '#fbbc04' : '';
+    vpnButton.title = { off: 'VPN is off (click to turn on)', connecting: 'VPN is connecting…', on: 'VPN is on (click to turn off)', error: 'VPN is not connected, pages are blocked (click for options)' }[state.vpn ?? 'off'];
     adblockButton.style.opacity = state.adblock ? '' : '0.4';
     adblockButton.title = state.adblock ? 'Ad blocker is on (click to turn off)' : 'Ad blocker is off (click to turn on)';
     adblockButton.setAttribute('aria-pressed', String(state.adblock));
@@ -560,6 +564,8 @@ onToolbar(el.forward, () => api.forward());
 onToolbar(el.reload, () => api.reload());
 onToolbar(el.home, () => api.home());
 onToolbar(el.pin, () => api.togglePin());
+const vpnButton = document.getElementById('vpn-btn');
+onToolbar(vpnButton, () => api.toggleVpn());
 const adblockButton = document.getElementById('adblock-btn');
 onToolbar(adblockButton, () => api.toggleAdblock());
 onToolbar(document.getElementById('incognito-btn'), () => api.newIncognito());
