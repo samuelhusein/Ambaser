@@ -18,6 +18,22 @@ function apply(ses: Session): void {
   blocker.enableBlockingInSession(ses);
 }
 
+// The library fires all of a page's scripts at once and handles no failure: on YouTube that is dozens of
+// load listeners and a stream of unhandled rejections. Run them one by one and drop the ones that fail.
+function queueScripts(engine: ElectronBlocker): void {
+  const inject = engine.onInjectCosmeticFilters;
+  engine.onInjectCosmeticFilters = (event, url, msg) => {
+    let queue: Promise<unknown> = Promise.resolve();
+    const sender = {
+      insertCSS: (css: string, options: Electron.InsertCSSOptions) => event.sender.insertCSS(css, options).catch(() => {}),
+      executeJavaScript: (code: string, gesture: boolean) => {
+        queue = queue.then(() => event.sender.executeJavaScript(code, gesture)).catch(() => {});
+      },
+    };
+    return inject({ frameId: event.frameId, processId: event.processId, sender } as unknown as Electron.IpcMainInvokeEvent, url, msg);
+  };
+}
+
 export function watchAdblock(partition: string): void {
   const ses = session.fromPartition(partition);
   sessions.add(ses);
@@ -43,6 +59,7 @@ export async function loadAdblock(partition: string): Promise<void> {
   try {
     // Without a connection, an old copy is better than none.
     blocker = await load(MAX_AGE_MS).catch(() => load(Infinity));
+    queueScripts(blocker);
     applyAdblock();
   } catch (err) {
     console.error(`adblock: ${(err as Error).message}`);

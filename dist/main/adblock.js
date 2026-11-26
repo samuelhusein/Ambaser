@@ -55,6 +55,21 @@ function apply(ses) {
     electron_1.ipcMain.removeHandler('@ghostery/adblocker/is-mutation-observer-enabled');
     blocker.enableBlockingInSession(ses);
 }
+// The library fires all of a page's scripts at once and handles no failure: on YouTube that is dozens of
+// load listeners and a stream of unhandled rejections. Run them one by one and drop the ones that fail.
+function queueScripts(engine) {
+    const inject = engine.onInjectCosmeticFilters;
+    engine.onInjectCosmeticFilters = (event, url, msg) => {
+        let queue = Promise.resolve();
+        const sender = {
+            insertCSS: (css, options) => event.sender.insertCSS(css, options).catch(() => { }),
+            executeJavaScript: (code, gesture) => {
+                queue = queue.then(() => event.sender.executeJavaScript(code, gesture)).catch(() => { });
+            },
+        };
+        return inject({ frameId: event.frameId, processId: event.processId, sender }, url, msg);
+    };
+}
 function watchAdblock(partition) {
     const ses = electron_1.session.fromPartition(partition);
     sessions.add(ses);
@@ -79,6 +94,7 @@ async function loadAdblock(partition) {
     try {
         // Without a connection, an old copy is better than none.
         blocker = await load(MAX_AGE_MS).catch(() => load(Infinity));
+        queueScripts(blocker);
         applyAdblock();
     }
     catch (err) {
