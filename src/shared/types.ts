@@ -21,6 +21,7 @@ export interface TabState {
   sleeping: boolean;
   unread: number; // from the page title
   muted: boolean;
+  audible: boolean;
 }
 
 export interface BrowserState {

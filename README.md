@@ -6,9 +6,9 @@ A small desktop web browser built on Electron and TypeScript. It has its own tab
 
 ## Features
 
-- **Ad blocker**: blocks ads and trackers with Ghostery's engine; the shield button turns it off. Filter lists are downloaded from GitHub and refreshed every few days.
+- **Ad blocker**: blocks ads, trackers and pop-up ad networks with Ghostery's engine; the shield button turns it off. Filter lists are downloaded from GitHub and jsDelivr and refreshed every few days.
 - **VPN** (macOS and Windows x64): the lock button sends this app's traffic through Cloudflare WARP, with no sign-up. The first use downloads [wireproxy](https://github.com/windtf/wireproxy) and asks you to accept Cloudflare's terms. If the tunnel drops, pages are blocked and do not fall back to the normal connection.
-- **Tabs**: groups with colors and icons, drag to reorder, hover previews, mute per tab, and a `+N` button that lists the tabs that do not fit.
+- **Tabs**: groups with colors and icons, drag to reorder, hover previews, a speaker icon on tabs that are playing sound, mute per tab, and a `+N` button that lists the tabs that do not fit.
 - **Tab sleep**: a background tab idle for 10 minutes is emptied to free memory and reloads when selected. Tabs that play audio, are loading, or have dev tools open are left alone.
 - **Favorites bar**: pages pinned with the star appear under the address bar. Manage them in Settings > Favorites.
 - **Address bar**: history and Google suggestions (suggestions are off in incognito).

@@ -36,12 +36,14 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.watchAdblock = watchAdblock;
 exports.applyAdblock = applyAdblock;
 exports.loadAdblock = loadAdblock;
-// Built-in ad and tracker blocking, using Ghostery's engine with the EasyList family of filter lists.
+// Built-in ad and tracker blocking, using Ghostery's engine with the EasyList family of filter lists and a pop-up ad list.
 const electron_1 = require("electron");
 const fs = __importStar(require("fs"));
 const path = __importStar(require("path"));
 const adblocker_electron_1 = require("@ghostery/adblocker-electron");
 const store_1 = require("./store");
+// The EasyList family misses many pop-up and overlay ad networks, which move between throwaway domains.
+const LISTS = [...adblocker_electron_1.adsAndTrackingLists, 'https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/adblock/popupads.txt'];
 const MAX_AGE_MS = 3 * 24 * 60 * 60 * 1000; // older filter lists are downloaded again at the next start
 const sessions = new Set();
 let blocker = null;
@@ -81,10 +83,11 @@ function applyAdblock() {
     sessions.forEach(apply);
 }
 async function loadAdblock(partition) {
-    const file = path.join(electron_1.app.getPath('userData'), 'adblock-engine.bin');
+    // A new name when LISTS changes, or the copy built from the old lists stays in use until it is stale.
+    const file = path.join(electron_1.app.getPath('userData'), 'adblock-engine-2.bin');
     const load = (maxAge) => 
     // Fetched through the web session, so the proxy setting applies.
-    adblocker_electron_1.ElectronBlocker.fromPrebuiltAdsAndTracking((url) => electron_1.session.fromPartition(partition).fetch(url), {
+    adblocker_electron_1.ElectronBlocker.fromLists((url) => electron_1.session.fromPartition(partition).fetch(url), LISTS, {}, {
         path: file,
         read: async (p) => {
             if (Date.now() - (await fs.promises.stat(p)).mtimeMs > maxAge)
@@ -98,6 +101,7 @@ async function loadAdblock(partition) {
         blocker = await load(MAX_AGE_MS).catch(() => load(Infinity));
         queueScripts(blocker);
         applyAdblock();
+        void fs.promises.rm(path.join(electron_1.app.getPath('userData'), 'adblock-engine.bin'), { force: true });
     }
     catch (err) {
         console.error(`adblock: ${err.message}`);

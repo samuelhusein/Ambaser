@@ -169,7 +169,7 @@ function snapshot({ tabs, groups, activeTab }: Win): BrowserState {
   const unread = unreadByHost(tabs);
   return {
     isActivePinned: activeTab ? store.isPinned(activeTab.url) : false,
-    tabs: tabs.map((t) => ({ id: t.id, groupId: t.groupId, title: t.title, url: displayUrl(t.url), favicon: t.favicon, loading: t.loading, sleeping: t.sleeping, unread: unreadOf(t), muted: t.view.webContents.isAudioMuted() })),
+    tabs: tabs.map((t) => ({ id: t.id, groupId: t.groupId, title: t.title, url: displayUrl(t.url), favicon: t.favicon, loading: t.loading, sleeping: t.sleeping, unread: unreadOf(t), muted: t.view.webContents.isAudioMuted(), audible: t.view.webContents.isCurrentlyAudible() })),
     favorites: store.pinned().map((site) => ({
       url: site.url,
       title: withoutUnread(site.title),
@@ -525,6 +525,7 @@ function createTab(w: Win, url: string, groupId: number | null = null): void {
     if (!w.incognito) retitle(tab.url, title);
     broadcast(w);
   });
+  wc.on('audio-state-changed', () => broadcast(w)); // the speaker icon on the tab
   wc.on('page-favicon-updated', (_event, favicons) => {
     if (tab.sleeping) return;
     tab.favicon = favicons[0] ?? null;

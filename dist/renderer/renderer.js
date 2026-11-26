@@ -86,6 +86,7 @@ const ICONS = {
     minus: 'M5 12h14',
     sliders: 'M4 7h10M18 7h2M16 5v4M4 17h2M10 17h10M8 15v4',
     muted: 'M4 9v6h4l5 4V5L8 9zM17 9l4 6M21 9l-4 6',
+    sound: 'M4 9v6h4l5 4V5L8 9zM16.5 9a4.5 4.5 0 0 1 0 6M19 6.5a8 8 0 0 1 0 11',
     pause: 'M8 5v14M16 5v14',
     folder: 'M3 7h6l2 2h10v10H3z',
     download: 'M12 4v11M7 11l5 5 5-5M5 20h14',
@@ -286,10 +287,10 @@ function tabElement(tab, active) {
     row.append(title);
     if (tab.unread)
         row.append(badge(tab.unread));
-    if (tab.muted) {
-        const mute = icon('muted');
-        mute.classList.add('tab-muted');
-        row.append(mute);
+    if (tab.muted || tab.audible) {
+        const sound = icon(tab.muted ? 'muted' : 'sound');
+        sound.classList.add(tab.muted ? 'tab-muted' : 'tab-sound');
+        row.append(sound);
     }
     row.append(removeButton('Close tab', () => api.closeTab(tab.id)));
     return row;

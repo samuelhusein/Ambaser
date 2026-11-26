@@ -98,6 +98,7 @@ button, input { font: inherit; color: var(--fg); }
 .tab.sleeping { opacity: 0.55; }
 .tab:hover { background: var(--hover); }
 .tab-muted { color: var(--fg-dim); }
+.tab-sound { color: var(--accent); }
 .tab-favicon { flex: none; width: 16px; height: 16px; }
 .tab-title { flex: 1; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .tab-spinner { flex: none; width: 16px; height: 16px; border-radius: 50%; border: 2px solid var(--accent); border-top-color: transparent; animation: spin 0.8s linear infinite; }
