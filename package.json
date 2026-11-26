@@ -1,6 +1,6 @@
 {
   "name": "mybrowser",
-  "version": "0.1.17",
+  "version": "0.1.18",
   "main": "dist/main/main.js",
   "scripts": {
     "build": "tsc -p . && node scripts/copy-static.js",
