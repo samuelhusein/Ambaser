@@ -38,6 +38,8 @@ registerScheme();
 app.commandLine.appendSwitch('js-flags', '--max-old-space-size=1024');
 app.commandLine.appendSwitch('disk-cache-size', String(100 * 1024 * 1024));
 app.commandLine.appendSwitch('disable-features', 'SpareRendererForSitePerProcess');
+// Chromium fetches a large file in 4 parts at once when the server allows ranges. 4 leaves 2 of the 6 connections per host for browsing.
+app.commandLine.appendSwitch('enable-features', 'ParallelDownloading:request_count/4');
 // Blocks WebRTC from revealing this machine's local network IP to any site (video calls, etc.),
 // which otherwise leaks even through a proxy or on an untrusted network.
 app.commandLine.appendSwitch('force-webrtc-ip-handling-policy', 'disable_non_proxied_udp');
