@@ -39,7 +39,7 @@ exports.startVpn = startVpn;
 exports.stopVpn = stopVpn;
 // Built-in VPN for this app only: a Cloudflare WARP tunnel run by wireproxy, which offers it as a local
 // SOCKS5 proxy. While it is on, everything is sent to that proxy and nowhere else, so a dropped tunnel
-// stops traffic and never falls back to the normal connection. macOS only for now.
+// stops traffic and never falls back to the normal connection. macOS and Windows x64.
 const electron_1 = require("electron");
 const child_process_1 = require("child_process");
 const crypto_1 = require("crypto");
@@ -52,12 +52,17 @@ const network_1 = require("./network");
 const RELEASE = 'https://github.com/windtf/wireproxy/releases/download/v1.1.3';
 // SHA-256 of that release's archives; anything else is refused.
 const ARCHIVES = {
-    arm64: { name: 'wireproxy_darwin_arm64.tar.gz', sha256: '28d34342c48c309b628d9c06ab4efc05b82fba49821f360605c02139c02547a5' },
-    x64: { name: 'wireproxy_darwin_amd64.tar.gz', sha256: '5d89742a0f381d9508d3ad828a0d300dceee24fa49015427eaff42a23f7a50bd' },
+    'darwin-arm64': { name: 'wireproxy_darwin_arm64.tar.gz', sha256: '28d34342c48c309b628d9c06ab4efc05b82fba49821f360605c02139c02547a5' },
+    'darwin-x64': { name: 'wireproxy_darwin_amd64.tar.gz', sha256: '5d89742a0f381d9508d3ad828a0d300dceee24fa49015427eaff42a23f7a50bd' },
+    'win32-x64': { name: 'wireproxy_windows_amd64.tar.gz', sha256: 'bce041ea9fe0f8a3351301dcbe29cdf6a523bb25cf9c62f17ebb5699a8051d0f' },
 };
+const TARGET = `${process.platform}-${process.arch}`;
+const EXE = process.platform === 'win32' ? '.exe' : '';
+// Windows by full path: a GNU tar earlier on PATH would read "C:\..." as a remote host.
+const TAR = process.platform === 'win32' ? `${process.env.SystemRoot}\\System32\\tar.exe` : '/usr/bin/tar';
 const API = 'https://api.cloudflareclient.com/v0a2158';
 exports.WARP_TERMS = 'https://www.cloudflare.com/application/terms/';
-exports.vpnSupported = process.platform === 'darwin' && process.arch in ARCHIVES;
+exports.vpnSupported = TARGET in ARCHIVES;
 let status = 'off';
 let child = null;
 let port = 0;
@@ -65,7 +70,7 @@ let restarts = 0;
 let run = 0; // bumped by every start and stop, so a slow older one gives up
 let changed = () => { };
 const folder = () => path.join(electron_1.app.getPath('userData'), 'vpn');
-const binary = () => path.join(folder(), 'wireproxy-1.1.3');
+const binary = () => path.join(folder(), `wireproxy-1.1.3${EXE}`);
 const accountFile = () => path.join(folder(), 'warp.json');
 // Its own session: setting up must work before the tunnel does, while everything else is already routed to it.
 const setup = () => electron_1.session.fromPartition('vpn-setup');
@@ -84,7 +89,7 @@ function guardWebRtc(wc) {
 async function installBinary() {
     if (fs.existsSync(binary()))
         return;
-    const archive = ARCHIVES[process.arch];
+    const archive = ARCHIVES[TARGET];
     const response = await setup().fetch(`${RELEASE}/${archive.name}`, { signal: AbortSignal.timeout(60000) });
     if (!response.ok)
         throw new Error(`could not download the tunnel program (${response.status})`);
@@ -94,9 +99,9 @@ async function installBinary() {
     const unpack = fs.mkdtempSync(path.join(folder(), 'unpack-'));
     try {
         fs.writeFileSync(path.join(unpack, archive.name), data);
-        await (0, util_1.promisify)(child_process_1.execFile)('/usr/bin/tar', ['-xzf', path.join(unpack, archive.name), '-C', unpack, 'wireproxy']);
-        fs.chmodSync(path.join(unpack, 'wireproxy'), 0o755);
-        fs.renameSync(path.join(unpack, 'wireproxy'), binary());
+        await (0, util_1.promisify)(child_process_1.execFile)(TAR, ['-xzf', path.join(unpack, archive.name), '-C', unpack, `wireproxy${EXE}`], { windowsHide: true });
+        fs.chmodSync(path.join(unpack, `wireproxy${EXE}`), 0o755);
+        fs.renameSync(path.join(unpack, `wireproxy${EXE}`), binary());
     }
     finally {
         fs.rmSync(unpack, { recursive: true, force: true });
@@ -151,7 +156,7 @@ process.on('exit', killTunnel); // also covers app.exit(), which skips the quit 
 function launch(account, mine) {
     const config = path.join(folder(), 'tunnel.conf');
     fs.writeFileSync(config, (0, vpn_1.tunnelConfig)(account, port), { mode: 0o600 });
-    const process_ = (0, child_process_1.spawn)(binary(), ['-s', '-c', config], { stdio: 'ignore' });
+    const process_ = (0, child_process_1.spawn)(binary(), ['-s', '-c', config], { stdio: 'ignore', windowsHide: true });
     child = process_;
     const ended = () => {
         if (child !== process_ || mine !== run)
