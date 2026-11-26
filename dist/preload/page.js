@@ -124,27 +124,3 @@ document.addEventListener('leavepictureinpicture', (event) => {
             electron_1.ipcRenderer.send('pip:back');
     }, 300);
 }, true);
-// Google's sign-in is told in the request headers that this is Firefox (see main/google-login.ts), so its
-// scripts must read the same. The name built here has to match the one there.
-if (location.hostname === 'accounts.google.com') {
-    electron_1.contextBridge.executeInMainWorld({
-        func: () => {
-            const version = `${/Chrome\/(\d+)/.exec(navigator.userAgent)?.[1]}.0`;
-            const mac = navigator.userAgent.includes('Macintosh');
-            const os = mac ? 'Macintosh; Intel Mac OS X 10.15' : navigator.userAgent.includes('Windows') ? 'Windows NT 10.0; Win64; x64' : 'X11; Linux x86_64';
-            const values = {
-                userAgent: `Mozilla/5.0 (${os}; rv:${version}) Gecko/20100101 Firefox/${version}`,
-                appVersion: `5.0 (${mac ? 'Macintosh' : os.startsWith('Windows') ? 'Windows' : 'X11'})`,
-                vendor: '',
-                productSub: '20100101',
-            };
-            for (const [name, value] of Object.entries(values)) {
-                Object.defineProperty(Navigator.prototype, name, { configurable: true, enumerable: true, get: () => value });
-            }
-            Reflect.deleteProperty(Navigator.prototype, 'userAgentData');
-            Reflect.deleteProperty(window, 'chrome');
-            // Passkeys often fail here (no Touch ID set up, a phone passkey needs Bluetooth): offer another way.
-            Reflect.deleteProperty(window, 'PublicKeyCredential');
-        },
-    });
-}
