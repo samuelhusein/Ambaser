@@ -173,6 +173,7 @@ export interface BrowserApi {
   previewTab(id: number): Promise<string | null>;
   dropTab(id: number, drop: TabDrop): void;
   isMac: boolean;
+  isWindows: boolean; // the tab strip leaves room for the system window buttons
   windowAction(action: WindowAction): void;
   newTab(url?: string): void;
   closeTab(id: number): void;

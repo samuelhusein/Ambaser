@@ -151,6 +151,7 @@ for (const button of document.querySelectorAll<HTMLButtonElement>('button[data-i
   button.append(icon(button.dataset.icon as IconName));
 }
 
+if (api.isWindows) document.body.classList.add('windows');
 if (api.isMac) {
   document.body.classList.add('mac');
   (document.getElementById('window-buttons') as HTMLDivElement).hidden = false;

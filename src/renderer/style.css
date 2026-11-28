@@ -471,3 +471,7 @@ body.profile-cyan .tab-strip { box-shadow: inset 0 3px 0 var(--profile-line); --
 .media-panel .media-play svg { width: 20px; height: 20px; }
 .media-controls { display: flex; align-items: center; gap: 4px; }
 .media-seek { flex: 1; min-width: 0; margin: 0 6px; accent-color: var(--fg); }
+
+/* Windows draws its minimize, maximize and close buttons over the right end of the tab strip:
+   three of 46px each. The chrome is its own view, so the CSS titlebar-area variables do not reach it. */
+body.windows .tab-strip { padding-right: calc(138px + var(--edge)); }

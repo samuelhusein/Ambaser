@@ -28,6 +28,7 @@ import { MEDIA_COMMANDS, parseMedia } from '../shared/media';
 const CHROME_HEIGHT = 120; // tab strip 40 + toolbar 44 + pinned bar 36
 const WEB_PARTITION = 'persist:browser';
 const IS_MAC = process.platform === 'darwin';
+const IS_WINDOWS = process.platform === 'win32';
 const APP_NAME = 'Ambaser';
 const ICON = path.join(__dirname, '../../assets/icon.png');
 const PAGE_PRELOAD = path.join(__dirname, '../preload/page.js');
@@ -912,6 +913,9 @@ function registerIpc(): void {
 const glass = (): 'hud' | 'under-window' => (nativeTheme.shouldUseDarkColors ? 'hud' : 'under-window');
 
 // Setting themeSource drives prefers-color-scheme in every page, including websites.
+// Transparent, so the tab strip's own colours show behind them; only the symbols follow light or dark.
+const captionButtons = (): Electron.TitleBarOverlay => ({ color: '#00000000', symbolColor: nativeTheme.shouldUseDarkColors ? '#f5f5f7' : '#1d1d1f', height: 40 });
+
 function applyAppearance(): void {
   nativeTheme.themeSource = store.appearance().mode;
 }
@@ -928,6 +932,8 @@ function createWindow(incognito = false, saved: SavedTab[] = []): Win {
     backgroundColor: '#1f2125',
     // macOS glass: the system blurs what is behind the window; the chrome draws its own window buttons.
     ...(IS_MAC ? { titleBarStyle: 'hidden' as const, vibrancy: glass(), visualEffectState: 'active' as const, backgroundColor: '#00000000' } : {}),
+    // Windows: no title bar; its own minimize, maximize and close buttons sit at the right of the tab strip.
+    ...(IS_WINDOWS ? { titleBarStyle: 'hidden' as const, titleBarOverlay: captionButtons() } : {}),
     webPreferences: chromePreferences,
   });
   const chrome = new WebContentsView({ webPreferences: chromePreferences });
@@ -950,6 +956,13 @@ function createWindow(incognito = false, saved: SavedTab[] = []): Win {
   win.contentView.addChildView(chrome);
   layout(w);
   win.on('resize', () => layout(w));
+  // Windows, without the title bar: after a minimize the views stay hidden and the window comes back blank.
+  // Hiding them first makes layout() show them again for real.
+  win.on('restore', () => {
+    chrome.setVisible(false);
+    w.activeTab?.view.setVisible(false);
+    layout(w);
+  });
   if (IS_MAC) {
     const hideNativeButtons = (): void => win.setWindowButtonVisibility(false);
     hideNativeButtons();
@@ -1167,6 +1180,7 @@ app.whenReady().then(async () => {
   applyAppearance();
   nativeTheme.on('updated', () => {
     if (IS_MAC) for (const w of windows) w.win.setVibrancy(glass());
+    if (IS_WINDOWS) for (const w of windows) w.win.setTitleBarOverlay(captionButtons());
   });
   // Network settings go in before the first page loads.
   applyDns(store.network());

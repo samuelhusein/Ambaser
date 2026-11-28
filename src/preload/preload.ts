@@ -4,6 +4,7 @@ import type { BrowserApi, DownloadInfo, BrowserState, GroupState, MediaCommand, 
 // The only surface the chrome UI gets. Fixed channel names, typed arguments, no raw ipcRenderer exposed.
 const api: BrowserApi = {
   isMac: process.platform === 'darwin',
+  isWindows: process.platform === 'win32',
   windowAction: (action: WindowAction) => ipcRenderer.send('window:action', action),
   newTab: (url?: string) => ipcRenderer.send('tab:new', typeof url === 'string' ? url : undefined),
   closeTab: (id: number) => ipcRenderer.send('tab:close', id),

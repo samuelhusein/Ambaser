@@ -122,6 +122,8 @@ function icon(name) {
 for (const button of document.querySelectorAll('button[data-icon]')) {
     button.append(icon(button.dataset.icon));
 }
+if (api.isWindows)
+    document.body.classList.add('windows');
 if (api.isMac) {
     document.body.classList.add('mac');
     document.getElementById('window-buttons').hidden = false;

@@ -4,6 +4,7 @@ const electron_1 = require("electron");
 // The only surface the chrome UI gets. Fixed channel names, typed arguments, no raw ipcRenderer exposed.
 const api = {
     isMac: process.platform === 'darwin',
+    isWindows: process.platform === 'win32',
     windowAction: (action) => electron_1.ipcRenderer.send('window:action', action),
     newTab: (url) => electron_1.ipcRenderer.send('tab:new', typeof url === 'string' ? url : undefined),
     closeTab: (id) => electron_1.ipcRenderer.send('tab:close', id),
