@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, net, session, shell, WebContentsView, IpcMainEvent, IpcMainInvokeEvent, WebContents } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, net, session, shell, webContents, WebContentsView, IpcMainEvent, IpcMainInvokeEvent, WebContents } from 'electron';
 import * as fs from 'fs';
 import * as path from 'path';
 import { BLANK_URL, HOME_URL, certErrorUrl, displayUrl, isAllowedUrl, isAppUrl, loadErrorUrl, normalizeInput, unreadCount, withoutUnread } from '../shared/url';
@@ -242,32 +242,77 @@ function activate(w: Win, tab: Tab): void {
 }
 
 const SLEEP_AFTER_MS = 10 * 60 * 1000;
+const SHORT_SLEEP_AFTER_MS = 60 * 1000; // while memory is short, a tab left for a minute may sleep
 
-// Frees a background page's memory by replacing it with about:blank; wake() brings it back.
-function sleepTab(w: Win, tab: Tab): void {
+// Frees all of a background page's memory by ending its renderer process. The tab keeps its history,
+// and wake() reloads the page in a new process. Returns whether it went to sleep.
+function sleepTab(w: Win, tab: Tab, after = SLEEP_AFTER_MS): boolean {
   const wc = tab.view.webContents;
-  const idle = Date.now() - tab.lastActive > SLEEP_AFTER_MS;
+  const idle = Date.now() - tab.lastActive > after;
   const keep = tab === w.activeTab || tab.sleeping || tab.loading || !idle || wc.isCurrentlyAudible() || wc.isDevToolsOpened() || !/^https?:/.test(tab.url);
   // Chat and mail stay awake, or new messages would stop showing up.
-  if (keep || allowsNotifications(wc.session, tab.url) || unreadOf(tab) || hostOf(tab.url) === 'web.whatsapp.com') return;
+  if (keep || allowsNotifications(wc.session, tab.url) || unreadOf(tab) || hostOf(tab.url) === 'web.whatsapp.com') return false;
+  // A process shared with another page (such as a popup it opened) would take that page down too.
+  const pid = wc.getOSProcessId();
+  if (pid && webContents.getAllWebContents().some((o) => o !== wc && !o.isDestroyed() && o.getOSProcessId() === pid)) return false;
   tab.sleeping = true;
-  load(wc, 'about:blank');
+  if (pid) wc.forcefullyCrashRenderer();
   broadcast(w);
+  return true;
 }
 
 function wake(tab: Tab): void {
   tab.sleeping = false;
   tab.loading = false; // an event ignored while asleep must not leave the spinner on
-  const wc = tab.view.webContents;
-  const history = wc.navigationHistory;
-  if (!history.canGoBack()) return load(wc, tab.url);
-  // Drop the blank entry sleeping left behind, so Forward does not lead to an empty page.
-  // Checked first: if going back never happens, the next navigation must not drop some other entry.
-  wc.once('did-navigate', () => {
-    const next = history.getActiveIndex() + 1;
-    if (next < history.length() && history.getEntryAtIndex(next).url === 'about:blank') history.removeEntryAtIndex(next);
+  tab.view.webContents.reload(); // in a new process, at the same place in the tab's history
+}
+
+// Memory is short when this app holds over a quarter of the RAM, or (Windows, where "free" means
+// available) the system has under a tenth left. Both in KB.
+function memoryShort(): boolean {
+  const { total, free } = process.getSystemMemoryInfo();
+  const used = app.getAppMetrics().reduce((sum, p) => sum + (p.memory.privateBytes ?? p.memory.workingSetSize), 0);
+  return used > total / 4 || (IS_WINDOWS && free < total / 10);
+}
+
+// Puts the longest unused background tabs to sleep, a few per check, so the next check sees what that freed.
+function relieveMemory(): void {
+  if (!memoryShort()) return;
+  const all = windows.flatMap((w) => w.tabs.map((tab) => ({ w, tab }))).sort((a, b) => a.tab.lastActive - b.tab.lastActive);
+  let slept = 0;
+  for (const { w, tab } of all) if (slept < 3 && sleepTab(w, tab, SHORT_SLEEP_AFTER_MS)) slept++;
+}
+
+// What each tab and part of the app uses, for comparing with other browsers. Private memory where the
+// system reports it (Windows), as Task Manager shows; elsewhere the working set, which counts shared pages too.
+function memoryReport(w: Win): void {
+  const metrics = app.getAppMetrics();
+  const size = (p: Electron.ProcessMetric): number => p.memory.privateBytes ?? p.memory.workingSetSize;
+  const mb = (kb: number): string => `${Math.round(kb / 1024)} MB`;
+  const byPid = new Map(metrics.map((p) => [p.pid, p]));
+  const counted = new Set<number>();
+  const tabs = windows.flatMap((o) => o.tabs).map((tab) => {
+    const pid = tab.view.webContents.getOSProcessId();
+    const shared = counted.has(pid);
+    counted.add(pid);
+    const process_ = tab.sleeping || shared ? undefined : byPid.get(pid);
+    const kb = process_ ? size(process_) : 0;
+    const title = tab.title.length > 48 ? `${tab.title.slice(0, 47)}…` : tab.title;
+    return { kb, line: `${title}: ${tab.sleeping ? 'asleep' : shared ? 'shares a process with another tab' : mb(kb)}` };
   });
-  history.goBack();
+  const bars = windows.map((o) => o.chrome.webContents.getOSProcessId());
+  bars.forEach((pid) => counted.add(pid));
+  const sum = (list: Electron.ProcessMetric[]): number => list.reduce((total, p) => total + size(p), 0);
+  const rest = metrics.filter((p) => !counted.has(p.pid));
+  const parts = [
+    `App: ${mb(sum(rest.filter((p) => p.type === 'Browser')))}`,
+    `Graphics and video (GPU): ${mb(sum(rest.filter((p) => p.type === 'GPU')))}`,
+    `Tab bar: ${mb(sum(metrics.filter((p) => bars.includes(p.pid))))}`,
+    `Network, audio and other services: ${mb(sum(rest.filter((p) => p.type === 'Utility')))}`,
+    `Frames inside pages, popups and other: ${mb(sum(rest.filter((p) => !['Browser', 'GPU', 'Utility'].includes(p.type))))}`,
+  ];
+  const detail = [...tabs.sort((a, b) => b.kb - a.kb).map((t) => t.line), '', ...parts].join('\n');
+  void dialog.showMessageBox(w.win, { type: 'info', message: `${APP_NAME} is using ${mb(sum(metrics))}`, detail, buttons: ['OK'] });
 }
 
 // After switching tabs the keyboard goes to the address bar.
@@ -472,7 +517,7 @@ function createTab(w: Win, url: string, groupId: number | null = null): void {
     layout(w);
   });
   wc.on('render-process-gone', (_event, details) => {
-    if (details.reason !== 'clean-exit') load(wc, loadErrorUrl(tab.url, 0, 'PAGE_CRASHED'));
+    if (details.reason !== 'clean-exit' && !tab.sleeping) load(wc, loadErrorUrl(tab.url, 0, 'PAGE_CRASHED')); // sleeping ends it on purpose
   });
 
   wc.on('page-title-updated', (event, title) => {
@@ -747,6 +792,7 @@ function registerIpc(): void {
   });
   onCommand('window:incognito', () => createWindow(true));
   onCommand('page:devtools', ({ activeTab }) => activeTab?.view.webContents.toggleDevTools());
+  onCommand('memory:show', memoryReport);
   onCommand('tab:close', (w, id) => closeTab(w, Number(id)));
   onCommand('tab:activate', (w, id) => {
     const tab = findTab(w, id);
@@ -996,7 +1042,10 @@ function createWindow(incognito = false, saved: SavedTab[] = []): Win {
     updateDockBadge();
   });
 
-  chrome.webContents.once('did-finish-load', () => win.show());
+  chrome.webContents.once('did-finish-load', () => {
+    win.show();
+    void probeAv1(chrome.webContents);
+  });
   chrome.webContents.on('did-finish-load', () => {
     broadcast(w);
     const url = w.activeTab?.url;
@@ -1208,6 +1257,20 @@ function buildMenu(): void {
   );
 }
 
+// 4K on YouTube often comes as AV1. Without a hardware AV1 decoder the CPU decodes it, running hot and
+// dropping frames, so preload/page.ts then has YouTube send VP9, which most GPUs decode. Asked once a run
+// in our own page (the main process has no media stack) and kept, so the next start knows before any tab loads.
+let av1Probed = false;
+async function probeAv1(chrome: WebContents): Promise<void> {
+  if (av1Probed) return;
+  av1Probed = true;
+  const probe = `navigator.mediaCapabilities.decodingInfo({ type: 'media-source', video: { contentType: 'video/webm; codecs="av01.0.12M.08"', width: 3840, height: 2160, bitrate: 20000000, framerate: 60 } }).then((r) => r.supported && r.powerEfficient)`;
+  const efficient: unknown = await chrome.executeJavaScript(probe).catch(() => null);
+  if (typeof efficient === 'boolean') store.setAv1Efficient(efficient);
+}
+// Asked by the page preload as a YouTube page starts. Unknown (the very first start) leaves AV1 allowed.
+ipcMain.on('media:av1', (event) => (event.returnValue = store.av1Efficient() !== false));
+
 // The VPN was removed (macOS and Windows had it). A crash could leave its tunnel running, still holding
 // the program: stop it, then drop the program, its config and the WARP key. A failure must not stop startup.
 function removeVpn(): void {
@@ -1243,6 +1306,7 @@ app.whenReady().then(async () => {
     for (const w of windows) for (const tab of w.tabs) sleepTab(w, tab);
     saveSession(); // a crash, a kill or a Windows shutdown loses at most this minute of tabs
   }, 60 * 1000);
+  setInterval(relieveMemory, 20 * 1000);
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) return reopenWindow();
     // While a picture-in-picture window is up, macOS counts it as open and does not bring back a minimized one.

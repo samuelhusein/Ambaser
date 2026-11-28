@@ -32,11 +32,12 @@ interface StoreData {
   adblock: boolean;
   permissions: Record<string, boolean>; // "origin kind" -> allowed
   certificates: Record<string, string>; // host -> fingerprint of the bad certificate the user accepted
+  av1Efficient: boolean | null; // this machine decodes AV1 video in hardware; null until checked
 }
 
 const barCount = (): number => data.pinned.filter((s) => s.bar).length;
 
-let data: StoreData = { pinned: [], lastSession: [], lastGroups: [], network: DEFAULT_NETWORK, appearance: parseAppearance(null), adblock: true, permissions: {}, certificates: {} };
+let data: StoreData = { pinned: [], lastSession: [], lastGroups: [], network: DEFAULT_NETWORK, appearance: parseAppearance(null), adblock: true, permissions: {}, certificates: {}, av1Efficient: null };
 const file = (): string => path.join(app.getPath('userData'), 'browser-data.json');
 
 const sites = (list: unknown): SiteEntry[] =>
@@ -52,7 +53,7 @@ export function loadStore(): void {
   try {
     const parsed = JSON.parse(fs.readFileSync(file(), 'utf8'));
     const network = parseNetwork(parsed?.network);
-    data = { pinned: sites(parsed?.pinned), lastSession: sites(parsed?.lastSession), lastGroups: Array.isArray(parsed?.lastGroups) ? parsed.lastGroups : [], network: typeof network === 'string' ? DEFAULT_NETWORK : network, permissions: answers(parsed?.permissions), certificates: strings(parsed?.certificates), appearance: parseAppearance(parsed?.appearance), adblock: parsed?.adblock !== false };
+    data = { pinned: sites(parsed?.pinned), lastSession: sites(parsed?.lastSession), lastGroups: Array.isArray(parsed?.lastGroups) ? parsed.lastGroups : [], network: typeof network === 'string' ? DEFAULT_NETWORK : network, permissions: answers(parsed?.permissions), certificates: strings(parsed?.certificates), appearance: parseAppearance(parsed?.appearance), adblock: parsed?.adblock !== false, av1Efficient: typeof parsed?.av1Efficient === 'boolean' ? parsed.av1Efficient : null };
     // Favorites saved before the bar had a limit: the first ones are shown.
     let shown = data.pinned.filter((s) => s.bar === true).length;
     for (const site of data.pinned) if (typeof site.bar !== 'boolean') site.bar = shown < BAR_LIMIT && ++shown > 0;
@@ -86,6 +87,12 @@ export const store = {
   },
   removePermission(key: string): void {
     delete data.permissions[key];
+    save();
+  },
+  av1Efficient: (): boolean | null => data.av1Efficient,
+  setAv1Efficient(efficient: boolean): void {
+    if (data.av1Efficient === efficient) return;
+    data.av1Efficient = efficient;
     save();
   },
   removeCertificate(host: string): void {

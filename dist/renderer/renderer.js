@@ -109,6 +109,7 @@ const ICONS = {
     rewind: 'M11 7l-7 5l7 5zM20 7l-7 5l7 5z',
     fastforward: 'M13 7l7 5l-7 5zM4 7l7 5l-7 5z',
     pip: 'M3 5h18v14H3zM12 12h6v4h-6z',
+    memory: 'M7 7h10v10H7zM10 3v4M14 3v4M10 17v4M14 17v4M3 10h4M3 14h4M17 10h4M17 14h4',
 };
 function icon(name) {
     const ns = 'http://www.w3.org/2000/svg';
@@ -591,6 +592,7 @@ const adblockButton = document.getElementById('adblock-btn');
 onToolbar(adblockButton, () => api.toggleAdblock());
 onToolbar(document.getElementById('incognito-btn'), () => api.newIncognito());
 onToolbar(document.getElementById('devtools-btn'), () => api.toggleDevTools());
+onToolbar(document.getElementById('memory-btn'), () => api.showMemory());
 // ---- Site settings: what the site in the active tab may do ----
 const PERMISSION_LABELS = {
     notifications: 'Notifications',

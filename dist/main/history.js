@@ -58,7 +58,15 @@ function loadHistory() {
             console.error(`history load: ${err.message}`);
     }
 }
-function save() {
+// Visits, titles and icons change many times a page; the file is written at most once a second,
+// and at exit (app.exit included) whatever is still waiting.
+let timer = null;
+const save = () => void (timer ??= setTimeout(flush, 1000));
+function flush() {
+    if (!timer)
+        return;
+    clearTimeout(timer);
+    timer = null;
     try {
         fs.writeFileSync(file(), JSON.stringify(entries));
     }
@@ -66,6 +74,7 @@ function save() {
         console.error(`history save: ${err.message}`);
     }
 }
+process.on('exit', flush);
 const allHistory = () => entries;
 exports.allHistory = allHistory;
 function recordVisit(url, title) {
@@ -91,8 +100,10 @@ function setFavicon(url, favicon) {
 function removeVisit(url) {
     entries = entries.filter((e) => e.url !== url);
     save();
+    flush(); // what the user deleted leaves the disk now
 }
 function clearHistory() {
     entries = [];
     save();
+    flush();
 }

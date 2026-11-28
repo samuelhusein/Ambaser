@@ -168,6 +168,7 @@ export interface BrowserApi {
   // Pulls the latest code and offers a restart. Resolves to a message to show.
   updateApp(pin: string): Promise<string>;
   toggleDevTools(): void;
+  showMemory(): void;
   onShowHistory(callback: () => void): void;
   // A thumbnail of the tab as a data: URL, or null if there is none yet.
   previewTab(id: number): Promise<string | null>;

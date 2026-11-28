@@ -40,6 +40,7 @@ const api = {
     appVersion: () => electron_1.ipcRenderer.invoke('app:version', ''),
     updateApp: (pin) => electron_1.ipcRenderer.invoke('app:update', pin),
     toggleDevTools: () => electron_1.ipcRenderer.send('page:devtools'),
+    showMemory: () => electron_1.ipcRenderer.send('memory:show'),
     togglePin: () => electron_1.ipcRenderer.send('pin:toggle'),
     onShowHistory: (callback) => {
         electron_1.ipcRenderer.on('history:show', () => callback());

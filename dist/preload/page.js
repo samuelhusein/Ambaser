@@ -103,6 +103,27 @@ electron_1.contextBridge.executeInMainWorld({
         });
     },
 });
+// Where this machine cannot decode AV1 in hardware, YouTube is told AV1 is unsupported and sends VP9,
+// which keeps 4K smooth and the CPU cool (see probeAv1 in main.ts).
+if (/(^|\.)youtube\.com$/.test(location.hostname) && electron_1.ipcRenderer.sendSync('media:av1') === false) {
+    electron_1.contextBridge.executeInMainWorld({
+        func: () => {
+            const av1 = (type) => /av01/i.test(String(type ?? ''));
+            const isTypeSupported = MediaSource.isTypeSupported.bind(MediaSource);
+            MediaSource.isTypeSupported = (type) => !av1(type) && isTypeSupported(type);
+            const canPlayType = HTMLMediaElement.prototype.canPlayType;
+            HTMLMediaElement.prototype.canPlayType = function (type) {
+                return av1(type) ? '' : canPlayType.call(this, type);
+            };
+            const decodingInfo = MediaCapabilities.prototype.decodingInfo;
+            MediaCapabilities.prototype.decodingInfo = function (config) {
+                if (av1(config?.video?.contentType))
+                    return Promise.resolve({ supported: false, smooth: false, powerEfficient: false });
+                return decodingInfo.call(this, config);
+            };
+        },
+    });
+}
 // Two-finger swipe left/right goes back/forward, with an arrow bubble like Chrome's. It only starts when
 // nothing under the pointer can scroll that way and the page did not claim the wheel for itself.
 const SWIPE_DISTANCE = 160; // horizontal scroll, in pixels, that arms the navigation

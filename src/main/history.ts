@@ -17,13 +17,22 @@ export function loadHistory(): void {
   }
 }
 
-function save(): void {
+// Visits, titles and icons change many times a page; the file is written at most once a second,
+// and at exit (app.exit included) whatever is still waiting.
+let timer: NodeJS.Timeout | null = null;
+const save = (): void => void (timer ??= setTimeout(flush, 1000));
+
+function flush(): void {
+  if (!timer) return;
+  clearTimeout(timer);
+  timer = null;
   try {
     fs.writeFileSync(file(), JSON.stringify(entries));
   } catch (err) {
     console.error(`history save: ${(err as Error).message}`);
   }
 }
+process.on('exit', flush);
 
 export const allHistory = (): HistoryEntry[] => entries;
 
@@ -51,9 +60,11 @@ export function setFavicon(url: string, favicon: string): void {
 export function removeVisit(url: string): void {
   entries = entries.filter((e) => e.url !== url);
   save();
+  flush(); // what the user deleted leaves the disk now
 }
 
 export function clearHistory(): void {
   entries = [];
   save();
+  flush();
 }

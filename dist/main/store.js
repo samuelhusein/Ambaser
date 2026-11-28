@@ -44,7 +44,7 @@ const appearance_1 = require("../shared/appearance");
 const network_1 = require("../shared/network");
 exports.BAR_LIMIT = 8;
 const barCount = () => data.pinned.filter((s) => s.bar).length;
-let data = { pinned: [], lastSession: [], lastGroups: [], network: network_1.DEFAULT_NETWORK, appearance: (0, appearance_1.parseAppearance)(null), adblock: true, permissions: {}, certificates: {} };
+let data = { pinned: [], lastSession: [], lastGroups: [], network: network_1.DEFAULT_NETWORK, appearance: (0, appearance_1.parseAppearance)(null), adblock: true, permissions: {}, certificates: {}, av1Efficient: null };
 const file = () => path.join(electron_1.app.getPath('userData'), 'browser-data.json');
 const sites = (list) => Array.isArray(list) ? list.filter((e) => typeof e?.url === 'string' && typeof e?.title === 'string') : [];
 const strings = (input) => typeof input === 'object' && input !== null ? Object.fromEntries(Object.entries(input).filter(([, v]) => typeof v === 'string')) : {};
@@ -53,7 +53,7 @@ function loadStore() {
     try {
         const parsed = JSON.parse(fs.readFileSync(file(), 'utf8'));
         const network = (0, network_1.parseNetwork)(parsed?.network);
-        data = { pinned: sites(parsed?.pinned), lastSession: sites(parsed?.lastSession), lastGroups: Array.isArray(parsed?.lastGroups) ? parsed.lastGroups : [], network: typeof network === 'string' ? network_1.DEFAULT_NETWORK : network, permissions: answers(parsed?.permissions), certificates: strings(parsed?.certificates), appearance: (0, appearance_1.parseAppearance)(parsed?.appearance), adblock: parsed?.adblock !== false };
+        data = { pinned: sites(parsed?.pinned), lastSession: sites(parsed?.lastSession), lastGroups: Array.isArray(parsed?.lastGroups) ? parsed.lastGroups : [], network: typeof network === 'string' ? network_1.DEFAULT_NETWORK : network, permissions: answers(parsed?.permissions), certificates: strings(parsed?.certificates), appearance: (0, appearance_1.parseAppearance)(parsed?.appearance), adblock: parsed?.adblock !== false, av1Efficient: typeof parsed?.av1Efficient === 'boolean' ? parsed.av1Efficient : null };
         // Favorites saved before the bar had a limit: the first ones are shown.
         let shown = data.pinned.filter((s) => s.bar === true).length;
         for (const site of data.pinned)
@@ -90,6 +90,13 @@ exports.store = {
     },
     removePermission(key) {
         delete data.permissions[key];
+        save();
+    },
+    av1Efficient: () => data.av1Efficient,
+    setAv1Efficient(efficient) {
+        if (data.av1Efficient === efficient)
+            return;
+        data.av1Efficient = efficient;
         save();
     },
     removeCertificate(host) {
