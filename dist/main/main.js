@@ -54,13 +54,13 @@ const version_1 = require("../shared/version");
 const updates_1 = require("./updates");
 const child_process_1 = require("child_process");
 const util_1 = require("util");
-const vpn_1 = require("./vpn");
 const adblock_1 = require("./adblock");
 const google_login_1 = require("./google-login");
 const profiles_1 = require("./profiles");
 const qrcode_generator_1 = __importDefault(require("qrcode-generator"));
 const downloads_1 = require("./downloads");
 const history_1 = require("./history");
+const media_1 = require("../shared/media");
 const CHROME_HEIGHT = 120; // tab strip 40 + toolbar 44 + pinned bar 36
 const WEB_PARTITION = 'persist:browser';
 const IS_MAC = process.platform === 'darwin';
@@ -190,7 +190,7 @@ function snapshot({ tabs, groups, activeTab }) {
         groups,
         appearance: store_1.store.appearance(),
         adblock: store_1.store.adblock(),
-        vpn: vpn_1.vpnSupported ? (0, vpn_1.vpnStatus)() : null,
+        media: tabs.some((t) => t.media && !t.sleeping),
         update,
         // Marked only once there is more than one to tell apart.
         profile: (0, profiles_1.listProfiles)().length > 1 ? (0, profiles_1.currentProfile)() : null,
@@ -228,62 +228,6 @@ async function deleteProfile(w, id) {
         await electron_1.dialog.showMessageBox(w.win, { type: 'error', message: error });
     showProfiles();
     return error;
-}
-const reroute = () => (0, network_1.applyProxy)(store_1.store.network(), [WEB_PARTITION, ...windows.map((w) => w.partition)]);
-const reloadAll = () => {
-    for (const w of windows)
-        if (w.activeTab)
-            reload(w.activeTab.view.webContents);
-};
-async function turnVpnOn(w, strict) {
-    try {
-        await (0, vpn_1.startVpn)(reroute, strict);
-        store_1.store.setVpn(true);
-        reloadAll();
-    }
-    catch (err) {
-        console.error(`vpn: ${err.message}`);
-        if (!w.win.isDestroyed())
-            await electron_1.dialog.showMessageBox(w.win, { type: 'error', message: 'The VPN could not start', detail: err.message });
-    }
-}
-async function turnVpnOff() {
-    store_1.store.setVpn(false);
-    await (0, vpn_1.stopVpn)(reroute);
-    reloadAll();
-}
-let askingVpn = false;
-async function toggleVpn(w) {
-    const status = (0, vpn_1.vpnStatus)();
-    if (!vpn_1.vpnSupported || askingVpn)
-        return;
-    if (status === 'on' || status === 'connecting')
-        return turnVpnOff();
-    askingVpn = true;
-    try {
-        if (status === 'error') {
-            const { response } = await electron_1.dialog.showMessageBox(w.win, { type: 'warning', message: 'The VPN is not connected', detail: 'Pages are blocked until it connects, so nothing goes out unprotected. Some networks block WARP.', buttons: ['Try again', 'Turn VPN off', 'Cancel'], defaultId: 0, cancelId: 2 });
-            if (response === 0)
-                void turnVpnOn(w, true);
-            else if (response === 1)
-                await turnVpnOff();
-            return;
-        }
-        // The first time creates a Cloudflare account, so the user has to agree to its terms.
-        while (!(0, vpn_1.vpnRegistered)()) {
-            const { response } = await electron_1.dialog.showMessageBox(w.win, { type: 'question', message: 'Turn on the built-in VPN?', detail: `It uses Cloudflare WARP, free and without sign-up. It hides your IP address from websites, but you cannot pick a country. Only Ambaser uses it.\n\nBy continuing you accept Cloudflare's terms:\n${vpn_1.WARP_TERMS}\n\nThe first time, a small tunnel program (wireproxy) is downloaded.`, buttons: ['Cancel', 'Read terms', 'Agree and turn on'], defaultId: 2, cancelId: 0 });
-            if (response === 0)
-                return;
-            if (response === 2)
-                break;
-            createTab(w, vpn_1.WARP_TERMS);
-            return;
-        }
-        void turnVpnOn(w, false);
-    }
-    finally {
-        askingVpn = false;
-    }
 }
 function activate(w, tab) {
     if (w.activeTab === tab)
@@ -468,7 +412,7 @@ function createTab(w, url, groupId = null) {
         return;
     }
     const view = new electron_1.WebContentsView({ webPreferences: { ...webPreferences, partition: w.partition, preload: PAGE_PRELOAD } });
-    const tab = { id: nextId++, groupId: null, view, title: 'New Tab', url, favicon: null, loading: false, preview: null, sleeping: false, lastActive: Date.now() };
+    const tab = { id: nextId++, groupId: null, view, title: 'New Tab', url, favicon: null, loading: false, preview: null, sleeping: false, lastActive: Date.now(), media: false };
     tabs.push(tab);
     (0, groups_1.moveToGroup)(tabs, tab, groupId);
     const wc = view.webContents;
@@ -560,7 +504,13 @@ function createTab(w, url, groupId = null) {
             (0, history_1.retitle)(tab.url, title);
         broadcast(w);
     });
-    wc.on('audio-state-changed', () => broadcast(w)); // the speaker icon on the tab
+    // The speaker icon on the tab, and the media control center.
+    wc.on('audio-state-changed', () => {
+        if (wc.isCurrentlyAudible())
+            tab.media = true;
+        broadcast(w);
+    });
+    wc.on('did-navigate', () => (tab.media = false)); // a new page; in-page navigation keeps the player
     wc.on('page-favicon-updated', (_event, favicons) => {
         if (tab.sleeping)
             return;
@@ -742,6 +692,20 @@ function findTab(w, id) {
 }
 // A QR code of the page on screen, made here so the address is not sent anywhere. The image is null
 // when the address is too long for one.
+// Every tab that played sound, as its page describes its player now. Pages that stopped answering are left out.
+async function listMedia(w) {
+    const found = await Promise.all(w.tabs
+        .filter((t) => t.media && !t.sleeping)
+        .map(async (tab) => {
+        // The main frame directly: webContents.executeJavaScript waits for loading to finish, which a
+        // single-page app like Spotify can put off for long, and the panel only opens once all answered.
+        const ask = tab.view.webContents.mainFrame.executeJavaScript(`window[Symbol.for('ambaser.media')]?.('state', 0) ?? null`);
+        const raw = await Promise.race([ask, new Promise((resolve) => setTimeout(resolve, 1000, null))]).catch(() => null);
+        const media = (0, media_1.parseMedia)(raw);
+        return media && { ...media, tabId: tab.id, host: hostOf(tab.url), favicon: tab.favicon };
+    }));
+    return found.filter((m) => m !== null);
+}
 function pageQr(w) {
     const url = w.activeTab ? (0, url_1.displayUrl)(w.activeTab.url) : '';
     if (!/^https?:/.test(url))
@@ -807,7 +771,6 @@ function registerIpc() {
         else
             tab.view.webContents.focus();
     });
-    onCommand('vpn:toggle', (w) => void toggleVpn(w));
     onCommand('adblock:toggle', (w) => {
         store_1.store.setAdblock(!store_1.store.adblock());
         (0, adblock_1.applyAdblock)();
@@ -815,6 +778,14 @@ function registerIpc() {
             reload(w.activeTab.view.webContents);
         for (const win of windows)
             broadcast(win);
+    });
+    onQuery('media:list', (w) => listMedia(w));
+    onCommand('media:command', (w, id, command, value) => {
+        const tab = w.tabs.find((t) => t.id === id);
+        if (!tab || tab.sleeping || !media_1.MEDIA_COMMANDS.includes(command) || typeof value !== 'number' || !Number.isFinite(value))
+            return;
+        // The second argument counts as a user gesture, which play() and picture-in-picture require.
+        tab.view.webContents.mainFrame.executeJavaScript(`window[Symbol.for('ambaser.media')]?.(${JSON.stringify(command)}, ${value})`, true).catch((err) => console.error(`media: ${err.message}`));
     });
     onCommand('window:incognito', () => createWindow(true));
     onCommand('page:devtools', ({ activeTab }) => activeTab?.view.webContents.toggleDevTools());
@@ -1295,16 +1266,8 @@ electron_1.app.whenReady().then(async () => {
     // Network settings go in before the first page loads.
     (0, network_1.applyDns)(store_1.store.network());
     await (0, network_1.applyProxy)(store_1.store.network(), [WEB_PARTITION]);
-    (0, vpn_1.onVpnChange)(() => {
-        for (const w of windows)
-            broadcast(w);
-    });
-    electron_1.app.on('web-contents-created', (_event, wc) => (0, vpn_1.guardWebRtc)(wc));
-    // Left on last time: route into it before any page loads, and give it a moment to connect.
-    if (vpn_1.vpnSupported && store_1.store.vpn()) {
-        const started = (0, vpn_1.startVpn)(reroute, true).catch((err) => console.error(`vpn: ${err.message}`));
-        await Promise.race([started, new Promise((resolve) => setTimeout(resolve, 8000))]);
-    }
+    // The VPN was removed: drop its leftover tunnel program and WARP key.
+    fs.rmSync(path.join(electron_1.app.getPath('userData'), 'vpn'), { recursive: true, force: true });
     registerIpc();
     buildMenu();
     (0, profiles_1.watchProfiles)(showProfiles);

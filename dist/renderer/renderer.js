@@ -103,6 +103,12 @@ const ICONS = {
     play: 'M8 5l11 7l-11 7z',
     cart: 'M3 4h2l2.5 11h10L20 7H6M9 19h.01M17 19h.01',
     heart: 'M12 20s-8-4.7-8-10.5A4.5 4.5 0 0 1 12 7a4.5 4.5 0 0 1 8 2.5C20 15.3 12 20 12 20z',
+    music: 'M9 17V5l10-2v12M9 17a2.5 2.5 0 1 1-5 0a2.5 2.5 0 1 1 5 0M19 15a2.5 2.5 0 1 1-5 0a2.5 2.5 0 1 1 5 0',
+    previous: 'M6 5v14M18 5l-9 7l9 7z',
+    next: 'M18 5v14M6 5l9 7l-9 7z',
+    rewind: 'M11 7l-7 5l7 5zM20 7l-7 5l7 5z',
+    fastforward: 'M13 7l7 5l-7 5zM4 7l7 5l-7 5z',
+    pip: 'M3 5h18v14H3zM12 12h6v4h-6z',
 };
 function icon(name) {
     const ns = 'http://www.w3.org/2000/svg';
@@ -505,10 +511,7 @@ function drawFavoritesSettings() {
 }
 function render(state) {
     showProfile(state.profile); // first: it changes the room left for tabs
-    vpnButton.hidden = state.vpn === null;
-    vpnButton.style.opacity = state.vpn === 'off' ? '0.4' : '';
-    vpnButton.style.color = state.vpn === 'on' ? '#34a853' : state.vpn === 'error' ? '#ea4335' : state.vpn === 'connecting' ? '#fbbc04' : '';
-    vpnButton.title = { off: 'VPN is off (click to turn on)', connecting: 'VPN is connecting…', on: 'VPN is on (click to turn off)', error: 'VPN is not connected, pages are blocked (click for options)' }[state.vpn ?? 'off'];
+    mediaButton.classList.toggle('playing', state.media);
     adblockButton.style.opacity = state.adblock ? '' : '0.4';
     adblockButton.title = state.adblock ? 'Ad blocker is on (click to turn off)' : 'Ad blocker is off (click to turn on)';
     adblockButton.setAttribute('aria-pressed', String(state.adblock));
@@ -582,8 +585,6 @@ onToolbar(el.forward, () => api.forward());
 onToolbar(el.reload, () => api.reload());
 onToolbar(el.home, () => api.home());
 onToolbar(el.pin, () => api.togglePin());
-const vpnButton = document.getElementById('vpn-btn');
-onToolbar(vpnButton, () => api.toggleVpn());
 const adblockButton = document.getElementById('adblock-btn');
 onToolbar(adblockButton, () => api.toggleAdblock());
 onToolbar(document.getElementById('incognito-btn'), () => api.newIncognito());
@@ -738,8 +739,9 @@ function resizeChrome() {
     const qr = qrPanel.hidden ? 0 : Math.ceil(qrPanel.getBoundingClientRect().bottom) + 16;
     const profiles = profilesPanel.hidden ? 0 : Math.ceil(profilesPanel.getBoundingClientRect().bottom) + 16;
     const menu = menuPanel.hidden ? 0 : Math.ceil(menuPanel.getBoundingClientRect().bottom) + 16;
+    const media = mediaPanel.hidden ? 0 : Math.ceil(mediaPanel.getBoundingClientRect().bottom) + 16;
     const updating = updatePanel.hidden ? 0 : Math.ceil(updatePanel.getBoundingClientRect().bottom) + 16;
-    api.setDropdownHeight(panelOpen() ? 100000 : Math.max(dropdown, editor, preview, find, site, downloads, favmenu, updating, qr, profiles, menu));
+    api.setDropdownHeight(panelOpen() ? 100000 : Math.max(dropdown, editor, preview, find, site, downloads, favmenu, updating, qr, profiles, menu, media));
 }
 function drawDropdown() {
     el.dropdown.replaceChildren(...items.map(suggestionElement));
@@ -1118,7 +1120,7 @@ el.downloadsButton.addEventListener('click', () => {
 el.downloads.addEventListener('mouseenter', keepDownloads);
 // It never takes the place of something the user has open.
 api.onDownloadStarted(() => {
-    const busy = panelOpen() || items.length > 0 || document.activeElement === el.address || [el.editor, el.sitePanel, el.favmenu, updatePanel, qrPanel, profilesPanel, menuPanel].some((e) => !e.hidden);
+    const busy = panelOpen() || items.length > 0 || document.activeElement === el.address || [el.editor, el.sitePanel, el.favmenu, updatePanel, qrPanel, profilesPanel, menuPanel, mediaPanel].some((e) => !e.hidden);
     if (busy || !el.downloads.hidden)
         return;
     openDownloads();
@@ -1365,6 +1367,115 @@ popup(document.getElementById('qr-btn'), qrPanel, async () => {
         await qrImage.decode(); // the panel is measured once it opens
     }
     qrText.textContent = !qr ? 'Open a web page to get its QR code.' : qr.image ? qr.url : 'This address is too long for a QR code.';
+});
+// ---- Media control center: every tab that played sound, with its player's controls ----
+const mediaButton = document.getElementById('media-btn');
+const mediaPanel = document.getElementById('media-panel');
+const mediaList = document.getElementById('media-list');
+const mediaEmpty = document.getElementById('media-empty');
+const mediaRows = new Map();
+let mediaTimer;
+const clock = (seconds) => `${Math.floor(seconds / 60)}:${String(Math.floor(seconds % 60)).padStart(2, '0')}`;
+function mediaRow(tabId) {
+    const command = (name, value) => {
+        api.mediaCommand(tabId, name, value);
+        setTimeout(() => void refreshMedia(), 300); // the page needs a moment to act on it
+    };
+    const button = (name, title, action) => {
+        const b = document.createElement('button');
+        b.className = 'small-btn';
+        b.title = title;
+        b.append(icon(name));
+        b.addEventListener('click', () => command(action));
+        return b;
+    };
+    const box = (className, ...children) => {
+        const div = document.createElement('div');
+        div.className = className;
+        div.append(...children);
+        return div;
+    };
+    const art = document.createElement('img');
+    art.className = 'media-art';
+    art.alt = '';
+    const favicon = document.createElement('img');
+    favicon.alt = '';
+    favicon.addEventListener('error', () => (favicon.hidden = true));
+    const host = span('media-host', '');
+    const title = span('media-title', '');
+    const artist = span('media-artist', '');
+    const pip = button('pip', 'Picture in picture', 'pip');
+    const play = button('play', 'Play', 'playpause');
+    play.classList.add('media-play');
+    const previous = button('previous', 'Previous', 'previoustrack');
+    const next = button('next', 'Next', 'nexttrack');
+    const seek = document.createElement('input');
+    seek.type = 'range';
+    seek.className = 'media-seek';
+    seek.min = '0';
+    seek.step = 'any';
+    seek.setAttribute('aria-label', 'Position');
+    let dragging = false; // the refresh must not pull the thumb from under the pointer
+    seek.addEventListener('pointerdown', () => (dragging = true));
+    seek.addEventListener('change', () => {
+        dragging = false;
+        command('seekto', Number(seek.value));
+    });
+    // Clicking the song goes to its tab.
+    const info = box('media-info', box('media-source', favicon, host), title, artist);
+    info.title = 'Go to this tab';
+    info.addEventListener('click', () => {
+        closePop(mediaPanel);
+        api.activateTab(tabId);
+    });
+    const root = box('media-item', box('media-top', art, info, box('media-side', pip, play)), box('media-controls', previous, button('rewind', 'Back 10 seconds', 'seekbackward'), seek, button('fastforward', 'Forward 10 seconds', 'seekforward'), next));
+    const update = (media) => {
+        if (art.dataset.src !== media.artwork)
+            art.src = art.dataset.src = media.artwork;
+        art.hidden = !media.artwork;
+        if (favicon.dataset.src !== (media.favicon ?? '')) {
+            favicon.hidden = !media.favicon;
+            favicon.src = favicon.dataset.src = media.favicon ?? '';
+        }
+        host.textContent = media.host;
+        title.textContent = media.title || media.host;
+        artist.textContent = media.artist;
+        play.replaceChildren(icon(media.playing ? 'pause' : 'play'));
+        play.title = media.playing ? 'Pause' : 'Play';
+        previous.disabled = !media.canPrevious;
+        next.disabled = !media.canNext;
+        pip.hidden = !media.canPip;
+        seek.disabled = !media.duration; // a live stream has no end to seek within
+        seek.max = String(media.duration || 1);
+        if (!dragging)
+            seek.value = String(media.time);
+        seek.title = media.duration ? `${clock(media.time)} / ${clock(media.duration)}` : 'Live';
+    };
+    return { root, update };
+}
+async function refreshMedia() {
+    const list = await api.listMedia().catch(() => []); // the panel still opens, saying nothing is playing
+    const shown = new Set(list.map((m) => m.tabId));
+    for (const id of mediaRows.keys())
+        if (!shown.has(id))
+            mediaRows.delete(id);
+    const roots = list.map((media) => {
+        const row = mediaRows.get(media.tabId) ?? mediaRow(media.tabId);
+        mediaRows.set(media.tabId, row);
+        row.update(media);
+        return row.root;
+    });
+    // Only when the list changed: moving a row would drop a drag on its slider.
+    if (roots.length !== mediaList.children.length || roots.some((root, i) => mediaList.children[i] !== root))
+        mediaList.replaceChildren(...roots);
+    mediaEmpty.hidden = roots.length > 0;
+    if (!mediaPanel.hidden)
+        resizeChrome();
+}
+popup(mediaButton, mediaPanel, async () => {
+    await refreshMedia();
+    clearInterval(mediaTimer);
+    mediaTimer = setInterval(() => (mediaPanel.hidden ? clearInterval(mediaTimer) : void refreshMedia()), 1000);
 });
 // A round mark with the profile's first letter, in its colour.
 const avatar = (profile) => span(`avatar c-${profile.color}`, (Array.from(profile.name)[0] ?? '?').toUpperCase());

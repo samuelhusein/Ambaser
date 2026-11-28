@@ -16,14 +16,14 @@ import { isNewer } from '../shared/version';
 import { gitUpdate } from './updates';
 import { exec } from 'child_process';
 import { promisify } from 'util';
-import { guardWebRtc, onVpnChange, startVpn, stopVpn, vpnRegistered, vpnStatus, vpnSupported, WARP_TERMS } from './vpn';
 import { applyAdblock, loadAdblock, watchAdblock } from './adblock';
 import { allowGoogleLogin } from './google-login';
 import { addProfile, currentProfile, listProfiles, openProfile, removeProfile, updateProfile, useProfile, watchProfiles, whyKeep } from './profiles';
 import qrcode from 'qrcode-generator';
 import { downloadAction, downloadList, onDownloadsChange } from './downloads';
 import { allHistory, clearHistory, loadHistory, recordVisit, removeVisit, retitle, setFavicon } from './history';
-import type { BrowserState, UpdateInfo, GroupState, SiteInfo, TabDrop } from '../shared/types';
+import type { BrowserState, UpdateInfo, GroupState, MediaCommand, MediaInfo, SiteInfo, TabDrop } from '../shared/types';
+import { MEDIA_COMMANDS, parseMedia } from '../shared/media';
 
 const CHROME_HEIGHT = 120; // tab strip 40 + toolbar 44 + pinned bar 36
 const WEB_PARTITION = 'persist:browser';
@@ -71,6 +71,7 @@ interface Tab {
   preview: string | null; // last thumbnail; background tabs cannot be captured on demand
   sleeping: boolean; // its page was dropped from memory; it reloads when selected
   lastActive: number; // ms since epoch
+  media: boolean; // played sound since its page loaded, so it is listed in the media control center
 }
 
 const webPreferences = {
@@ -181,7 +182,7 @@ function snapshot({ tabs, groups, activeTab }: Win): BrowserState {
     groups,
     appearance: store.appearance(),
     adblock: store.adblock(),
-    vpn: vpnSupported ? vpnStatus() : null,
+    media: tabs.some((t) => t.media && !t.sleeping),
     update,
     // Marked only once there is more than one to tell apart.
     profile: listProfiles().length > 1 ? currentProfile() : null,
@@ -219,55 +220,6 @@ async function deleteProfile(w: Win, id: string): Promise<string> {
   if (error) await dialog.showMessageBox(w.win, { type: 'error', message: error });
   showProfiles();
   return error;
-}
-
-const reroute = (): Promise<void> => applyProxy(store.network(), [WEB_PARTITION, ...windows.map((w) => w.partition)]);
-const reloadAll = (): void => {
-  for (const w of windows) if (w.activeTab) reload(w.activeTab.view.webContents);
-};
-
-async function turnVpnOn(w: Win, strict: boolean): Promise<void> {
-  try {
-    await startVpn(reroute, strict);
-    store.setVpn(true);
-    reloadAll();
-  } catch (err) {
-    console.error(`vpn: ${(err as Error).message}`);
-    if (!w.win.isDestroyed()) await dialog.showMessageBox(w.win, { type: 'error', message: 'The VPN could not start', detail: (err as Error).message });
-  }
-}
-
-async function turnVpnOff(): Promise<void> {
-  store.setVpn(false);
-  await stopVpn(reroute);
-  reloadAll();
-}
-
-let askingVpn = false;
-async function toggleVpn(w: Win): Promise<void> {
-  const status = vpnStatus();
-  if (!vpnSupported || askingVpn) return;
-  if (status === 'on' || status === 'connecting') return turnVpnOff();
-  askingVpn = true;
-  try {
-    if (status === 'error') {
-      const { response } = await dialog.showMessageBox(w.win, { type: 'warning', message: 'The VPN is not connected', detail: 'Pages are blocked until it connects, so nothing goes out unprotected. Some networks block WARP.', buttons: ['Try again', 'Turn VPN off', 'Cancel'], defaultId: 0, cancelId: 2 });
-      if (response === 0) void turnVpnOn(w, true);
-      else if (response === 1) await turnVpnOff();
-      return;
-    }
-    // The first time creates a Cloudflare account, so the user has to agree to its terms.
-    while (!vpnRegistered()) {
-      const { response } = await dialog.showMessageBox(w.win, { type: 'question', message: 'Turn on the built-in VPN?', detail: `It uses Cloudflare WARP, free and without sign-up. It hides your IP address from websites, but you cannot pick a country. Only Ambaser uses it.\n\nBy continuing you accept Cloudflare's terms:\n${WARP_TERMS}\n\nThe first time, a small tunnel program (wireproxy) is downloaded.`, buttons: ['Cancel', 'Read terms', 'Agree and turn on'], defaultId: 2, cancelId: 0 });
-      if (response === 0) return;
-      if (response === 2) break;
-      createTab(w, WARP_TERMS);
-      return;
-    }
-    void turnVpnOn(w, false);
-  } finally {
-    askingVpn = false;
-  }
 }
 
 function activate(w: Win, tab: Tab): void {
@@ -445,7 +397,7 @@ function createTab(w: Win, url: string, groupId: number | null = null): void {
     return;
   }
   const view = new WebContentsView({ webPreferences: { ...webPreferences, partition: w.partition, preload: PAGE_PRELOAD } });
-  const tab: Tab = { id: nextId++, groupId: null, view, title: 'New Tab', url, favicon: null, loading: false, preview: null, sleeping: false, lastActive: Date.now() };
+  const tab: Tab = { id: nextId++, groupId: null, view, title: 'New Tab', url, favicon: null, loading: false, preview: null, sleeping: false, lastActive: Date.now(), media: false };
   tabs.push(tab);
   moveToGroup(tabs, tab, groupId);
   const wc = view.webContents;
@@ -525,7 +477,12 @@ function createTab(w: Win, url: string, groupId: number | null = null): void {
     if (!w.incognito) retitle(tab.url, title);
     broadcast(w);
   });
-  wc.on('audio-state-changed', () => broadcast(w)); // the speaker icon on the tab
+  // The speaker icon on the tab, and the media control center.
+  wc.on('audio-state-changed', () => {
+    if (wc.isCurrentlyAudible()) tab.media = true;
+    broadcast(w);
+  });
+  wc.on('did-navigate', () => (tab.media = false)); // a new page; in-page navigation keeps the player
   wc.on('page-favicon-updated', (_event, favicons) => {
     if (tab.sleeping) return;
     tab.favicon = favicons[0] ?? null;
@@ -697,6 +654,23 @@ function findTab(w: Win, id: unknown): Tab | undefined {
 
 // A QR code of the page on screen, made here so the address is not sent anywhere. The image is null
 // when the address is too long for one.
+// Every tab that played sound, as its page describes its player now. Pages that stopped answering are left out.
+async function listMedia(w: Win): Promise<MediaInfo[]> {
+  const found = await Promise.all(
+    w.tabs
+      .filter((t) => t.media && !t.sleeping)
+      .map(async (tab): Promise<MediaInfo | null> => {
+        // The main frame directly: webContents.executeJavaScript waits for loading to finish, which a
+        // single-page app like Spotify can put off for long, and the panel only opens once all answered.
+        const ask = tab.view.webContents.mainFrame.executeJavaScript(`window[Symbol.for('ambaser.media')]?.('state', 0) ?? null`);
+        const raw: unknown = await Promise.race([ask, new Promise((resolve) => setTimeout(resolve, 1000, null))]).catch(() => null);
+        const media = parseMedia(raw);
+        return media && { ...media, tabId: tab.id, host: hostOf(tab.url), favicon: tab.favicon };
+      }),
+  );
+  return found.filter((m) => m !== null);
+}
+
 function pageQr(w: Win): { url: string; image: string | null } | null {
   const url = w.activeTab ? displayUrl(w.activeTab.url) : '';
   if (!/^https?:/.test(url)) return null;
@@ -753,12 +727,18 @@ function registerIpc(): void {
     if (tab.url === BLANK_URL || tab.url === HOME_URL) focusAddress(w);
     else tab.view.webContents.focus();
   });
-  onCommand('vpn:toggle', (w) => void toggleVpn(w));
   onCommand('adblock:toggle', (w) => {
     store.setAdblock(!store.adblock());
     applyAdblock();
     if (w.activeTab) reload(w.activeTab.view.webContents);
     for (const win of windows) broadcast(win);
+  });
+  onQuery('media:list', (w) => listMedia(w));
+  onCommand('media:command', (w, id, command, value) => {
+    const tab = w.tabs.find((t) => t.id === id);
+    if (!tab || tab.sleeping || !MEDIA_COMMANDS.includes(command as MediaCommand) || typeof value !== 'number' || !Number.isFinite(value)) return;
+    // The second argument counts as a user gesture, which play() and picture-in-picture require.
+    tab.view.webContents.mainFrame.executeJavaScript(`window[Symbol.for('ambaser.media')]?.(${JSON.stringify(command)}, ${value})`, true).catch((err: Error) => console.error(`media: ${err.message}`));
   });
   onCommand('window:incognito', () => createWindow(true));
   onCommand('page:devtools', ({ activeTab }) => activeTab?.view.webContents.toggleDevTools());
@@ -1191,15 +1171,8 @@ app.whenReady().then(async () => {
   // Network settings go in before the first page loads.
   applyDns(store.network());
   await applyProxy(store.network(), [WEB_PARTITION]);
-  onVpnChange(() => {
-    for (const w of windows) broadcast(w);
-  });
-  app.on('web-contents-created', (_event, wc) => guardWebRtc(wc));
-  // Left on last time: route into it before any page loads, and give it a moment to connect.
-  if (vpnSupported && store.vpn()) {
-    const started = startVpn(reroute, true).catch((err: Error) => console.error(`vpn: ${err.message}`));
-    await Promise.race([started, new Promise((resolve) => setTimeout(resolve, 8000))]);
-  }
+  // The VPN was removed: drop its leftover tunnel program and WARP key.
+  fs.rmSync(path.join(app.getPath('userData'), 'vpn'), { recursive: true, force: true });
   registerIpc();
   buildMenu();
   watchProfiles(showProfiles);

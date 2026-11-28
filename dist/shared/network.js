@@ -6,7 +6,7 @@ exports.DEFAULT_NETWORK = {
     proxyMode: 'system',
     proxyServer: '',
     proxyBypass: '',
-    dnsMode: 'cloudflare',
+    dnsMode: 'system',
     dnsUrl: '',
 };
 // "host:port", optionally with http://, https://, socks4:// or socks5://. No user names or paths.

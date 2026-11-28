@@ -2,16 +2,10 @@
 import { app, session } from 'electron';
 import type { NetworkSettings } from '../shared/types';
 
-let vpnProxy: string | null = null; // while set, it replaces the proxy settings, with no direct fallback
-export const setVpnProxy = (rules: string | null): void => void (vpnProxy = rules);
-
 // The default session serves the app's own requests (search suggestions); tabs use named partitions.
 export async function applyProxy(settings: NetworkSettings, partitions: string[]): Promise<void> {
-  const config: Electron.ProxyConfig = vpnProxy
-    ? { mode: 'fixed_servers', proxyRules: vpnProxy }
-    : settings.proxyMode === 'manual'
-      ? { mode: 'fixed_servers', proxyRules: settings.proxyServer, proxyBypassRules: settings.proxyBypass }
-      : { mode: settings.proxyMode };
+  const config: Electron.ProxyConfig =
+    settings.proxyMode === 'manual' ? { mode: 'fixed_servers', proxyRules: settings.proxyServer, proxyBypassRules: settings.proxyBypass } : { mode: settings.proxyMode };
   await Promise.all(
     [session.defaultSession, ...partitions.map((p) => session.fromPartition(p))].map(async (ses) => {
       await ses.setProxy(config);

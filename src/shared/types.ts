@@ -29,7 +29,7 @@ export interface BrowserState {
   groups: GroupState[];
   appearance: Appearance;
   adblock: boolean;
-  vpn: VpnStatus | null; // null where the built-in VPN is not available
+  media: boolean; // a tab in this window has played sound since it loaded
   update: UpdateInfo | null; // a newer version exists on GitHub
   profile: Profile | null; // the one in use; null while there is only one
   activeId: number | null;
@@ -47,7 +47,23 @@ export interface UpdateInfo {
   other: string[];
 }
 
-export type VpnStatus = 'off' | 'connecting' | 'on' | 'error';
+// One player in the media control center, as its page reports it.
+export interface MediaInfo {
+  tabId: number;
+  host: string;
+  favicon: string | null;
+  title: string;
+  artist: string;
+  artwork: string; // http(s) or data: image, or ''
+  playing: boolean;
+  duration: number; // seconds; 0 when unknown (a live stream)
+  time: number;
+  canPrevious: boolean;
+  canNext: boolean;
+  canPip: boolean;
+}
+
+export type MediaCommand = 'playpause' | 'previoustrack' | 'nexttrack' | 'seekbackward' | 'seekforward' | 'seekto' | 'pip';
 
 export interface Appearance {
   mode: 'system' | 'light' | 'dark';
@@ -145,7 +161,8 @@ export interface BrowserApi {
   togglePin(): void;
   newIncognito(): void;
   toggleAdblock(): void;
-  toggleVpn(): void;
+  listMedia(): Promise<MediaInfo[]>;
+  mediaCommand(tabId: number, command: MediaCommand, value?: number): void;
   focusPage(): void;
   appVersion(): Promise<string>;
   // Pulls the latest code and offers a restart. Resolves to a message to show.

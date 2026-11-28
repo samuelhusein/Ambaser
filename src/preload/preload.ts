@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import type { BrowserApi, DownloadInfo, BrowserState, GroupState, NetworkSettings, Profile, TabDrop, WindowAction } from '../shared/types';
+import type { BrowserApi, DownloadInfo, BrowserState, GroupState, MediaCommand, NetworkSettings, Profile, TabDrop, WindowAction } from '../shared/types';
 
 // The only surface the chrome UI gets. Fixed channel names, typed arguments, no raw ipcRenderer exposed.
 const api: BrowserApi = {
@@ -33,8 +33,9 @@ const api: BrowserApi = {
   tabOverflow: (ids: number[]) => ipcRenderer.send('tabs:overflow', ids),
   newIncognito: () => ipcRenderer.send('window:incognito'),
   focusPage: () => ipcRenderer.send('page:focus'),
-  toggleVpn: () => ipcRenderer.send('vpn:toggle'),
   toggleAdblock: () => ipcRenderer.send('adblock:toggle'),
+  listMedia: () => ipcRenderer.invoke('media:list', ''),
+  mediaCommand: (tabId: number, command: MediaCommand, value?: number) => ipcRenderer.send('media:command', tabId, command, value ?? 0),
   appVersion: () => ipcRenderer.invoke('app:version', ''),
   updateApp: (pin: string) => ipcRenderer.invoke('app:update', pin),
   toggleDevTools: () => ipcRenderer.send('page:devtools'),

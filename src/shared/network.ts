@@ -5,7 +5,7 @@ export const DEFAULT_NETWORK: NetworkSettings = {
   proxyMode: 'system',
   proxyServer: '',
   proxyBypass: '',
-  dnsMode: 'cloudflare',
+  dnsMode: 'system',
   dnsUrl: '',
 };
 

@@ -17,6 +17,92 @@ if (electron_1.ipcRenderer.sendSync('permission:notifications') === 'default') {
         },
     });
 }
+// The media control center drives the page's player from here. It notes the page's own media-session
+// handlers (they cannot be read back later) and the last element that played, which can be detached
+// (new Audio()). The main process calls it through executeJavaScript; it only calls the page's own player.
+// shortcut: top frame only, so a player inside an iframe is not seen; add nodeIntegrationInSubFrames if needed.
+electron_1.contextBridge.executeInMainWorld({
+    func: () => {
+        const handlers = new Map();
+        let position = null;
+        let last = null;
+        const session = navigator.mediaSession;
+        if (session) {
+            const setHandler = session.setActionHandler.bind(session);
+            session.setActionHandler = (action, handler) => {
+                if (handler)
+                    handlers.set(action, handler);
+                else
+                    handlers.delete(action);
+                setHandler(action, handler);
+            };
+            const setPosition = session.setPositionState.bind(session);
+            session.setPositionState = (state) => {
+                position = state?.duration ? { ...state, at: performance.now() } : null;
+                setPosition(state);
+            };
+        }
+        const play = HTMLMediaElement.prototype.play;
+        HTMLMediaElement.prototype.play = function () {
+            last = this;
+            return play.call(this);
+        };
+        document.addEventListener('play', (event) => (last = event.target), true);
+        const element = () => last ?? document.querySelector('video, audio');
+        Object.defineProperty(window, Symbol.for('ambaser.media'), {
+            value: (command, value) => {
+                const media = element();
+                const meta = session?.metadata;
+                const playing = media ? !media.paused : session?.playbackState === 'playing';
+                const call = (action, details = {}) => {
+                    const handler = handlers.get(action);
+                    handler?.({ action, ...details });
+                    return !!handler;
+                };
+                if (command === 'state') {
+                    let duration = media && Number.isFinite(media.duration) ? media.duration : 0;
+                    let time = media?.currentTime ?? 0;
+                    if (position) {
+                        duration = position.duration ?? 0;
+                        time = (position.position ?? 0) + (playing ? ((performance.now() - position.at) / 1000) * (position.playbackRate ?? 1) : 0);
+                    }
+                    if (!media && !meta)
+                        return null;
+                    return {
+                        title: meta?.title || document.title,
+                        artist: meta?.artist ?? '',
+                        artwork: meta?.artwork.at(-1)?.src ?? '', // listed small to large
+                        playing,
+                        duration,
+                        time: Math.min(Math.max(time, 0), duration),
+                        canPrevious: handlers.has('previoustrack'),
+                        canNext: handlers.has('nexttrack'),
+                        canPip: media instanceof HTMLVideoElement && document.pictureInPictureEnabled,
+                    };
+                }
+                if (command === 'playpause') {
+                    if (!call(playing ? 'pause' : 'play'))
+                        void (playing ? media?.pause() : media?.play());
+                }
+                else if (command === 'previoustrack' || command === 'nexttrack')
+                    call(command);
+                else if (command === 'seekbackward' || command === 'seekforward') {
+                    const offset = command === 'seekbackward' ? -10 : 10;
+                    if (!call(command, { seekOffset: 10 }) && media)
+                        media.currentTime += offset;
+                }
+                else if (command === 'seekto') {
+                    if (!call('seekto', { seekTime: value }) && media)
+                        media.currentTime = value;
+                }
+                else if (command === 'pip' && media instanceof HTMLVideoElement) {
+                    void (document.pictureInPictureElement ? document.exitPictureInPicture() : media.requestPictureInPicture());
+                }
+                return null;
+            },
+        });
+    },
+});
 // Two-finger swipe left/right goes back/forward, with an arrow bubble like Chrome's. It only starts when
 // nothing under the pointer can scroll that way and the page did not claim the wheel for itself.
 const SWIPE_DISTANCE = 160; // horizontal scroll, in pixels, that arms the navigation
