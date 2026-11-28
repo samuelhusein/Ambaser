@@ -74,6 +74,9 @@ export function forgetCertificate(ses: Electron.Session, host: string): void {
   else temporary.get(ses)?.delete(host);
 }
 
+// An incognito window closed: its accepted certificates go with it.
+export const forgetSessionCertificates = (ses: Electron.Session): void => void temporary.delete(ses);
+
 export function forgetCertificates(): void {
   temporary.clear();
   store.clearCertificates();

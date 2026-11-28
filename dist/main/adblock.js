@@ -33,6 +33,7 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.unwatchAdblock = void 0;
 exports.watchAdblock = watchAdblock;
 exports.applyAdblock = applyAdblock;
 exports.loadAdblock = loadAdblock;
@@ -79,6 +80,8 @@ function watchAdblock(partition) {
     sessions.add(ses);
     apply(ses);
 }
+const unwatchAdblock = (partition) => void sessions.delete(electron_1.session.fromPartition(partition));
+exports.unwatchAdblock = unwatchAdblock;
 function applyAdblock() {
     sessions.forEach(apply);
 }

@@ -2,10 +2,10 @@ import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, net, session, s
 import * as fs from 'fs';
 import * as path from 'path';
 import { BLANK_URL, HOME_URL, certErrorUrl, displayUrl, isAllowedUrl, isAppUrl, loadErrorUrl, normalizeInput, unreadCount, withoutUnread } from '../shared/url';
-import { forgetCertificate, forgetCertificates, hasAcceptedCertificate, isTrusted, registerPages, registerScheme, runPageAction } from './app-pages';
+import { forgetCertificate, forgetCertificates, forgetSessionCertificates, hasAcceptedCertificate, isTrusted, registerPages, registerScheme, runPageAction } from './app-pages';
 import { applyDns, applyProxy } from './network';
 import { BAR_LIMIT, loadStore, store, SavedTab } from './store';
-import { allowsNotifications, guardPermissions, resetPermissions, setSitePermission, sitePermissions } from './permissions';
+import { allowsNotifications, forgetPermissions, guardPermissions, resetPermissions, setSitePermission, sitePermissions } from './permissions';
 import { autoPictureInPicture, isExternal, openExternal, showContextMenu, watchDownloads } from './web-features';
 import { parseNetwork } from '../shared/network';
 import { parseAppearance } from '../shared/appearance';
@@ -14,13 +14,13 @@ import { parseSuggestions, searchHistory, suggestQuery } from '../shared/suggest
 import { GROUP_COLORS, moveToGroup, patchGroup, placeTab, reviveGroups } from '../shared/groups';
 import { isNewer } from '../shared/version';
 import { gitUpdate } from './updates';
-import { exec } from 'child_process';
+import { exec, execFile } from 'child_process';
 import { promisify } from 'util';
-import { applyAdblock, loadAdblock, watchAdblock } from './adblock';
+import { applyAdblock, loadAdblock, unwatchAdblock, watchAdblock } from './adblock';
 import { allowGoogleLogin } from './google-login';
 import { addProfile, currentProfile, listProfiles, openProfile, removeProfile, updateProfile, useProfile, watchProfiles, whyKeep } from './profiles';
 import qrcode from 'qrcode-generator';
-import { downloadAction, downloadList, onDownloadsChange } from './downloads';
+import { downloadAction, downloadList, forgetDownloads, onDownloadsChange } from './downloads';
 import { allHistory, clearHistory, loadHistory, recordVisit, removeVisit, retitle, setFavicon } from './history';
 import type { BrowserState, UpdateInfo, GroupState, MediaCommand, MediaInfo, SiteInfo, TabDrop } from '../shared/types';
 import { MEDIA_COMMANDS, parseMedia } from '../shared/media';
@@ -262,7 +262,11 @@ function wake(tab: Tab): void {
   const history = wc.navigationHistory;
   if (!history.canGoBack()) return load(wc, tab.url);
   // Drop the blank entry sleeping left behind, so Forward does not lead to an empty page.
-  wc.once('did-navigate', () => history.removeEntryAtIndex(history.getActiveIndex() + 1));
+  // Checked first: if going back never happens, the next navigation must not drop some other entry.
+  wc.once('did-navigate', () => {
+    const next = history.getActiveIndex() + 1;
+    if (next < history.length() && history.getEntryAtIndex(next).url === 'about:blank') history.removeEntryAtIndex(next);
+  });
   history.goBack();
 }
 
@@ -374,7 +378,7 @@ function closeTab(w: Win, id: number): void {
     w.activeTab = null;
   }
   const address = displayUrl(tab.url);
-  if (/^https?:/.test(address)) w.closed.push(address);
+  if (/^https?:/.test(address) && w.closed.push(address) > 50) w.closed.shift(); // reopen-closed-tab keeps the newest 50
   tab.view.webContents.close();
   pruneGroups(w);
   if (tabs.length === 0) {
@@ -979,6 +983,18 @@ function createWindow(incognito = false, saved: SavedTab[] = []): Win {
     windows.splice(windows.indexOf(w), 1);
     for (const tab of w.tabs.splice(0)) tab.view.webContents.close();
     chrome.webContents.close();
+    // Electron never frees a session, so an incognito one is emptied by hand once its only window is gone.
+    if (incognito) {
+      const ses = session.fromPartition(partition);
+      forgetDownloads(partition);
+      unwatchAdblock(partition);
+      forgetPermissions(ses);
+      forgetSessionCertificates(ses);
+      void ses.clearStorageData().catch(() => {});
+      void ses.clearCache().catch(() => {});
+      void ses.clearAuthCache().catch(() => {});
+      void ses.closeAllConnections().catch(() => {});
+    }
     updateDockBadge();
   });
 
@@ -1171,6 +1187,17 @@ function buildMenu(): void {
   );
 }
 
+// The VPN was removed (macOS and Windows had it). A crash could leave its tunnel running, still holding
+// the program: stop it, then drop the program, its config and the WARP key. A failure must not stop startup.
+function removeVpn(): void {
+  const folder = path.join(app.getPath('userData'), 'vpn');
+  if (!fs.existsSync(folder)) return;
+  const [command, args] = IS_WINDOWS ? ['taskkill', ['/F', '/IM', 'wireproxy-1.1.3.exe']] : ['pkill', ['-f', path.join(folder, 'wireproxy')]];
+  execFile(command, args, { windowsHide: true }, () =>
+    fs.promises.rm(folder, { recursive: true, force: true, maxRetries: 5 }).catch((err: Error) => console.error(`vpn cleanup: ${err.message}`)),
+  );
+}
+
 app.whenReady().then(async () => {
   app.dock?.setIcon(ICON);
   loadHistory();
@@ -1185,8 +1212,7 @@ app.whenReady().then(async () => {
   // Network settings go in before the first page loads.
   applyDns(store.network());
   await applyProxy(store.network(), [WEB_PARTITION]);
-  // The VPN was removed: drop its leftover tunnel program and WARP key.
-  fs.rmSync(path.join(app.getPath('userData'), 'vpn'), { recursive: true, force: true });
+  removeVpn();
   registerIpc();
   buildMenu();
   watchProfiles(showProfiles);

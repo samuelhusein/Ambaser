@@ -44,6 +44,8 @@ export function watchAdblock(partition: string): void {
   apply(ses);
 }
 
+export const unwatchAdblock = (partition: string): void => void sessions.delete(session.fromPartition(partition));
+
 export function applyAdblock(): void {
   sessions.forEach(apply);
 }

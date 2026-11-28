@@ -33,6 +33,7 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.forgetSessionCertificates = void 0;
 exports.registerScheme = registerScheme;
 exports.isTrusted = isTrusted;
 exports.hasAcceptedCertificate = hasAcceptedCertificate;
@@ -110,6 +111,9 @@ function forgetCertificate(ses, host) {
     else
         temporary.get(ses)?.delete(host);
 }
+// An incognito window closed: its accepted certificates go with it.
+const forgetSessionCertificates = (ses) => void temporary.delete(ses);
+exports.forgetSessionCertificates = forgetSessionCertificates;
 function forgetCertificates() {
     temporary.clear();
     store_1.store.clearCertificates();

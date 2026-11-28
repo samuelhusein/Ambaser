@@ -64,6 +64,16 @@ export function trackDownload(item: DownloadItem, partition: string, ask: boolea
   changed(true);
 }
 
+// An incognito window closed: its downloads stop and leave the list, as in Chrome.
+export function forgetDownloads(partition: string): void {
+  for (let i = entries.length - 1; i >= 0; i--) {
+    if (entries[i].partition !== partition) continue;
+    entries[i].item?.cancel();
+    entries.splice(i, 1);
+  }
+  changed(true);
+}
+
 export function downloadAction(partition: string, id: number, action: string): void {
   const index = entries.findIndex((e) => e.info.id === id && e.partition === partition);
   const entry = entries[index];

@@ -272,7 +272,12 @@ function wake(tab) {
     if (!history.canGoBack())
         return load(wc, tab.url);
     // Drop the blank entry sleeping left behind, so Forward does not lead to an empty page.
-    wc.once('did-navigate', () => history.removeEntryAtIndex(history.getActiveIndex() + 1));
+    // Checked first: if going back never happens, the next navigation must not drop some other entry.
+    wc.once('did-navigate', () => {
+        const next = history.getActiveIndex() + 1;
+        if (next < history.length() && history.getEntryAtIndex(next).url === 'about:blank')
+            history.removeEntryAtIndex(next);
+    });
     history.goBack();
 }
 // After switching tabs the keyboard goes to the address bar.
@@ -389,8 +394,8 @@ function closeTab(w, id) {
         w.activeTab = null;
     }
     const address = (0, url_1.displayUrl)(tab.url);
-    if (/^https?:/.test(address))
-        w.closed.push(address);
+    if (/^https?:/.test(address) && w.closed.push(address) > 50)
+        w.closed.shift(); // reopen-closed-tab keeps the newest 50
     tab.view.webContents.close();
     pruneGroups(w);
     if (tabs.length === 0) {
@@ -1065,6 +1070,18 @@ function createWindow(incognito = false, saved = []) {
         for (const tab of w.tabs.splice(0))
             tab.view.webContents.close();
         chrome.webContents.close();
+        // Electron never frees a session, so an incognito one is emptied by hand once its only window is gone.
+        if (incognito) {
+            const ses = electron_1.session.fromPartition(partition);
+            (0, downloads_1.forgetDownloads)(partition);
+            (0, adblock_1.unwatchAdblock)(partition);
+            (0, permissions_1.forgetPermissions)(ses);
+            (0, app_pages_1.forgetSessionCertificates)(ses);
+            void ses.clearStorageData().catch(() => { });
+            void ses.clearCache().catch(() => { });
+            void ses.clearAuthCache().catch(() => { });
+            void ses.closeAllConnections().catch(() => { });
+        }
         updateDockBadge();
     });
     chrome.webContents.once('did-finish-load', () => win.show());
@@ -1263,6 +1280,15 @@ function buildMenu() {
         { role: 'windowMenu' },
     ]));
 }
+// The VPN was removed (macOS and Windows had it). A crash could leave its tunnel running, still holding
+// the program: stop it, then drop the program, its config and the WARP key. A failure must not stop startup.
+function removeVpn() {
+    const folder = path.join(electron_1.app.getPath('userData'), 'vpn');
+    if (!fs.existsSync(folder))
+        return;
+    const [command, args] = IS_WINDOWS ? ['taskkill', ['/F', '/IM', 'wireproxy-1.1.3.exe']] : ['pkill', ['-f', path.join(folder, 'wireproxy')]];
+    (0, child_process_1.execFile)(command, args, { windowsHide: true }, () => fs.promises.rm(folder, { recursive: true, force: true, maxRetries: 5 }).catch((err) => console.error(`vpn cleanup: ${err.message}`)));
+}
 electron_1.app.whenReady().then(async () => {
     electron_1.app.dock?.setIcon(ICON);
     (0, history_1.loadHistory)();
@@ -1281,8 +1307,7 @@ electron_1.app.whenReady().then(async () => {
     // Network settings go in before the first page loads.
     (0, network_1.applyDns)(store_1.store.network());
     await (0, network_1.applyProxy)(store_1.store.network(), [WEB_PARTITION]);
-    // The VPN was removed: drop its leftover tunnel program and WARP key.
-    fs.rmSync(path.join(electron_1.app.getPath('userData'), 'vpn'), { recursive: true, force: true });
+    removeVpn();
     registerIpc();
     buildMenu();
     (0, profiles_1.watchProfiles)(showProfiles);

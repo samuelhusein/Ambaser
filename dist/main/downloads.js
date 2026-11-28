@@ -2,6 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.downloadList = exports.onDownloadsChange = void 0;
 exports.trackDownload = trackDownload;
+exports.forgetDownloads = forgetDownloads;
 exports.downloadAction = downloadAction;
 const electron_1 = require("electron");
 const fs_1 = require("fs");
@@ -67,6 +68,16 @@ function trackDownload(item, partition, ask) {
         entry.item = null; // no longer controllable
         changed(true);
     });
+    changed(true);
+}
+// An incognito window closed: its downloads stop and leave the list, as in Chrome.
+function forgetDownloads(partition) {
+    for (let i = entries.length - 1; i >= 0; i--) {
+        if (entries[i].partition !== partition)
+            continue;
+        entries[i].item?.cancel();
+        entries.splice(i, 1);
+    }
     changed(true);
 }
 function downloadAction(partition, id, action) {
