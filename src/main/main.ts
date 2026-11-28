@@ -889,6 +889,7 @@ function registerIpc(): void {
       if (lock() !== before) await sh('npm install --no-audit --no-fund');
       const { response } = await dialog.showMessageBox(w.win, { type: 'info', message: 'Update downloaded', detail: 'Restart now to use it? Your tabs are restored.', buttons: ['Later', 'Restart'], defaultId: 1, cancelId: 0 });
       if (response !== 1) return 'Updated. Restart to use it';
+      saveSession(); // app.exit skips the quit and close events that would save the tabs
       app.relaunch();
       app.exit(0);
       return 'Restarting…';
@@ -972,12 +973,9 @@ function createWindow(incognito = false, saved: SavedTab[] = []): Win {
     hideNativeButtons();
     win.on('leave-full-screen', hideNativeButtons);
   }
-  // Remembered so the next start can reopen these tabs; incognito tabs are never saved.
+  // Closing one of several windows forgets it; closing the last normal one keeps it for next time.
   win.on('close', () => {
-    if (incognito) return;
-    // A tab showing an error page is saved as the page that failed, so being offline does not lose it.
-    const open = w.tabs.map((t) => ({ url: displayUrl(t.url), title: t.title, favicon: t.favicon, groupId: t.groupId, active: t === w.activeTab }));
-    store.setLastSession(open.filter((t) => isRestorable(t.url)), w.groups);
+    if (!incognito && !quitting) saveSession(windows.some((o) => o !== w && !o.incognito) ? w : null);
   });
   win.on('closed', () => {
     windows.splice(windows.indexOf(w), 1);
@@ -1014,9 +1012,32 @@ function createWindow(incognito = false, saved: SavedTab[] = []): Win {
   return w;
 }
 
-// The first window of a run (or after all were closed) reopens the tabs that were open last time.
+// Saves the tabs of every normal window (but `except`), so the next start reopens them. Incognito
+// windows are never saved. With no normal window left, what was saved before is kept.
+let quitting = false; // windows then close one by one, and each must not drop itself from the save
+function saveSession(except: Win | null = null): void {
+  const normal = windows.filter((w) => !w.incognito && w !== except);
+  if (normal.length === 0) return;
+  // A tab showing an error page is saved as the page that failed, so being offline does not lose it.
+  const tabs = normal.flatMap((w, window) =>
+    w.tabs.map((t) => ({ url: displayUrl(t.url), title: t.title, favicon: t.favicon, groupId: t.groupId, active: t === w.activeTab, window })),
+  );
+  store.setLastSession(tabs.filter((t) => isRestorable(t.url)), normal.flatMap((w) => w.groups));
+}
+app.on('before-quit', () => {
+  saveSession();
+  quitting = true;
+});
+
+// The first window of a run (or after all were closed) reopens the windows and tabs that were open last time.
 function reopenWindow(): void {
-  createWindow(false, store.lastSession().filter((t) => isRestorable(t.url)));
+  const byWindow = new Map<number, SavedTab[]>();
+  for (const tab of store.lastSession().filter((t) => isRestorable(t.url))) {
+    const key = typeof tab.window === 'number' ? tab.window : 0;
+    byWindow.set(key, [...(byWindow.get(key) ?? []), tab]);
+  }
+  if (byWindow.size === 0) createWindow();
+  for (const tabs of byWindow.values()) createWindow(false, tabs);
 }
 
 const isRestorable = (url: string): boolean => url === HOME_URL || (/^https?:/.test(url) && isAllowedUrl(url));
@@ -1220,6 +1241,7 @@ app.whenReady().then(async () => {
   reopenWindow();
   setInterval(() => {
     for (const w of windows) for (const tab of w.tabs) sleepTab(w, tab);
+    saveSession(); // a crash, a kill or a Windows shutdown loses at most this minute of tabs
   }, 60 * 1000);
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) return reopenWindow();

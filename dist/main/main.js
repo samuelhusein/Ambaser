@@ -975,6 +975,7 @@ function registerIpc() {
             const { response } = await electron_1.dialog.showMessageBox(w.win, { type: 'info', message: 'Update downloaded', detail: 'Restart now to use it? Your tabs are restored.', buttons: ['Later', 'Restart'], defaultId: 1, cancelId: 0 });
             if (response !== 1)
                 return 'Updated. Restart to use it';
+            saveSession(); // app.exit skips the quit and close events that would save the tabs
             electron_1.app.relaunch();
             electron_1.app.exit(0);
             return 'Restarting…';
@@ -1057,13 +1058,10 @@ function createWindow(incognito = false, saved = []) {
         hideNativeButtons();
         win.on('leave-full-screen', hideNativeButtons);
     }
-    // Remembered so the next start can reopen these tabs; incognito tabs are never saved.
+    // Closing one of several windows forgets it; closing the last normal one keeps it for next time.
     win.on('close', () => {
-        if (incognito)
-            return;
-        // A tab showing an error page is saved as the page that failed, so being offline does not lose it.
-        const open = w.tabs.map((t) => ({ url: (0, url_1.displayUrl)(t.url), title: t.title, favicon: t.favicon, groupId: t.groupId, active: t === w.activeTab }));
-        store_1.store.setLastSession(open.filter((t) => isRestorable(t.url)), w.groups);
+        if (!incognito && !quitting)
+            saveSession(windows.some((o) => o !== w && !o.incognito) ? w : null);
     });
     win.on('closed', () => {
         windows.splice(windows.indexOf(w), 1);
@@ -1103,9 +1101,32 @@ function createWindow(incognito = false, saved = []) {
         restoreTabs(w, saved);
     return w;
 }
-// The first window of a run (or after all were closed) reopens the tabs that were open last time.
+// Saves the tabs of every normal window (but `except`), so the next start reopens them. Incognito
+// windows are never saved. With no normal window left, what was saved before is kept.
+let quitting = false; // windows then close one by one, and each must not drop itself from the save
+function saveSession(except = null) {
+    const normal = windows.filter((w) => !w.incognito && w !== except);
+    if (normal.length === 0)
+        return;
+    // A tab showing an error page is saved as the page that failed, so being offline does not lose it.
+    const tabs = normal.flatMap((w, window) => w.tabs.map((t) => ({ url: (0, url_1.displayUrl)(t.url), title: t.title, favicon: t.favicon, groupId: t.groupId, active: t === w.activeTab, window })));
+    store_1.store.setLastSession(tabs.filter((t) => isRestorable(t.url)), normal.flatMap((w) => w.groups));
+}
+electron_1.app.on('before-quit', () => {
+    saveSession();
+    quitting = true;
+});
+// The first window of a run (or after all were closed) reopens the windows and tabs that were open last time.
 function reopenWindow() {
-    createWindow(false, store_1.store.lastSession().filter((t) => isRestorable(t.url)));
+    const byWindow = new Map();
+    for (const tab of store_1.store.lastSession().filter((t) => isRestorable(t.url))) {
+        const key = typeof tab.window === 'number' ? tab.window : 0;
+        byWindow.set(key, [...(byWindow.get(key) ?? []), tab]);
+    }
+    if (byWindow.size === 0)
+        createWindow();
+    for (const tabs of byWindow.values())
+        createWindow(false, tabs);
 }
 const isRestorable = (url) => url === url_1.HOME_URL || (/^https?:/.test(url) && (0, url_1.isAllowedUrl)(url));
 // Puts back the saved tabs, their groups and the tab that was in front.
@@ -1317,6 +1338,7 @@ electron_1.app.whenReady().then(async () => {
         for (const w of windows)
             for (const tab of w.tabs)
                 sleepTab(w, tab);
+        saveSession(); // a crash, a kill or a Windows shutdown loses at most this minute of tabs
     }, 60 * 1000);
     electron_1.app.on('activate', () => {
         if (electron_1.BrowserWindow.getAllWindows().length === 0)

@@ -16,10 +16,11 @@ export interface SiteEntry {
 
 export const BAR_LIMIT = 8;
 
-// A tab as it was when its window closed.
+// A tab as it was when the app last saved its windows.
 export interface SavedTab extends SiteEntry {
   groupId?: number | null;
   active?: boolean;
+  window?: number; // which of the saved windows; files from before had only one
 }
 
 interface StoreData {
