@@ -10,8 +10,7 @@
   --gap: 16px;
   --pad: 16px;
   --radius: 14px;
-  /* The page's outer margin, shared by body and anything pinned to a screen edge (like the
-     wallpaper credit), so they always land on the exact same line as the window is resized. */
+  /* The page's outer margin. */
   --edge-x: clamp(16px, 4vw, 40px);
   --edge-top: clamp(24px, 7vh, 72px);
 }
@@ -62,14 +61,10 @@ body.has-wallpaper header {
   text-shadow: 0 1px 16px light-dark(rgba(255, 255, 255, 0.5), rgba(0, 0, 0, 0.45));
 }
 
-/* Who to credit for today's photo. Same corner inset as the body's own padding, pixel for pixel. */
+/* Who to credit for today's photo: the last line of the page, so it never covers a panel. */
 .credit {
-  position: fixed;
-  left: var(--edge-x);
-  bottom: var(--edge-x);
-  z-index: 1;
-  display: block;
-  max-width: calc(100% - 2 * var(--edge-x));
+  justify-self: start;
+  max-width: 100%;
   overflow: hidden;
   padding: 6px 12px;
   border: 1px solid var(--line);
