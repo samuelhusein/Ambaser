@@ -1,6 +1,6 @@
 {
   "name": "mybrowser",
-  "version": "0.1.27",
+  "version": "0.1.28",
   "main": "dist/main/main.js",
   "scripts": {
     "build": "tsc -p . && node scripts/copy-static.js && node scripts/sign-electron.js",
